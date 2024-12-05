@@ -36,8 +36,10 @@ precommit: tidy apigen format lint
 
 # This runs precommit and checks for any differences in the codebase, failing if there are any.
 .PHONY: check
-check:
+check: editorconfig-checker
 	@$(MAKE) precommit
+	@echo "running editorconfig-checker"
+	@$(EDITORCONFIG_CHECKER)
 	@if [ ! -z "`git status -s`" ]; then \
 		echo "The following differences will fail CI until committed:"; \
 		git diff --exit-code; \
