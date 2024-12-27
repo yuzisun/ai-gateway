@@ -40,7 +40,7 @@ jobs:
     steps:
     - name: get-id-token
       run: |
-        IDTOKEN=$(curl -H "Authorization: bearer  $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com")
+        IDTOKEN=$(curl -H "Authorization: bearer  $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | base64)
         echo $IDTOKEN
         jwtd() {
              if [[ -x $(command -v jq) ]]; then
