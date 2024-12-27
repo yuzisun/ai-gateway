@@ -6,7 +6,9 @@ on:
   push:
     branches:
       - main
-
+permissions:
+   id-token: write
+   contents: read
 concurrency:
   # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#example-using-concurrency-to-cancel-any-in-progress-job-or-run
   group: ${{ github.ref }}-${{ github.workflow }}-${{ github.actor }}
