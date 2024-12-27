@@ -42,6 +42,13 @@ jobs:
       run: |
         IDTOKEN=$(curl -H "Authorization: bearer  $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
         echo $IDTOKEN
+        jwtd() {
+             if [[ -x $(command -v jq) ]]; then
+             jq -R 'split(".") | .[0],.[1] | @base64d | fromjson' <<< "${1}"
+             echo "Signature: $(echo "${1}" | awk -F'.' '{print $3}')"
+             fi
+        }
+        jwtd $IDTOKEN
   unittest:
     name: Unit Test
     runs-on: ubuntu-latest
