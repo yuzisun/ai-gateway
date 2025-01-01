@@ -59,7 +59,7 @@ jobs:
         EOF
         )
         echo $BODY
-        STS_RESPONSE=$(curl -X POST https://sts.googleapis.com/v1/token -H 'Accept: application/json' -H 'Content-Type: application/json' -d "'$BODY'")
+        STS_RESPONSE=$(curl -X POST https://sts.googleapis.com/v1/token -H 'Accept: application/json' -H 'Content-Type: application/json' -d "$BODY")
         echo $STS_RESPONSE
         STS_TOKEN=$(jq '.access_token' <<< "$STS_RESPONSE")
         echo $STS_TOKEN
