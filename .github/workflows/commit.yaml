@@ -57,7 +57,7 @@ jobs:
         "requestedTokenType": "urn:ietf:params:oauth:token-type:access_token", 
         "scope": "https://www.googleapis.com/auth/cloud-platform",
         "subjectTokenType": "urn:ietf:params:oauth:token-type:jwt", 
-        "subjectToken": $OIDC_TOKEN
+        "subjectToken": $IDTOKEN
         }
         EOF
         )
