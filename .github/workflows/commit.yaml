@@ -49,17 +49,18 @@ jobs:
              fi
         }
         jwtd $IDTOKEN
-        BODY=$(cat <<EOF
-        {"audience": "//iam.googleapis.com/projects/540214435924/locations/global/workloadIdentityPools/ai-gateway/providers/github-oidc",
+        STS_RESPONSE=$(curl -X POST https://sts.googleapis.com/v1/token -H 'Accept: application/json' -H 'Content-Type: application/json' \
+        --data-binary @- << EOF
+        {
+        "audience": "//iam.googleapis.com/projects/540214435924/locations/global/workloadIdentityPools/ai-gateway/providers/github-oidc",
         "grantType": "urn:ietf:params:oauth:grant-type:token-exchange",
         "requestedTokenType": "urn:ietf:params:oauth:token-type:access_token", 
         "scope": "https://www.googleapis.com/auth/cloud-platform",
         "subjectTokenType": "urn:ietf:params:oauth:token-type:jwt", 
-        "subjectToken": $OIDC_TOKEN}
+        "subjectToken": $OIDC_TOKEN
+        }
         EOF
         )
-        echo $BODY
-        STS_RESPONSE=$(curl -X POST https://sts.googleapis.com/v1/token -H 'Accept: application/json' -H 'Content-Type: application/json' -d "'"$BODY"'")
         echo $STS_RESPONSE
         STS_TOKEN=$(jq '.access_token' <<< "$STS_RESPONSE")
         echo $STS_TOKEN
