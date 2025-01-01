@@ -40,7 +40,7 @@ jobs:
     steps:
     - name: get-id-token
       run: |
-        IDTOKEN=$(curl -H "Authorization: bearer  $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
+        IDTOKEN=$(curl -H "Authorization: bearer  $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https%3A%2F%2Fiam.googleapis.com%2Fprojects%2F540214435924%2Flocations%2Fglobal%2FworkloadIdentityPools%2Fai-gateway%2Fproviders%2Fgithub-oidc" | jq -r '.value')
         echo $IDTOKEN
         jwtd() {
              if [[ -x $(command -v jq) ]]; then
@@ -60,6 +60,7 @@ jobs:
         )
         echo $BODY
         STS_RESPONSE=$(curl -X POST https://sts.googleapis.com/v1/token -H 'Accept: application/json' -H 'Content-Type: application/json' -d '$BODY')
+        echo $STS_RESPONSE
         STS_TOKEN=$(jq '.access_token' <<< "$STS_RESPONSE")
         echo $STS_TOKEN
   unittest:
