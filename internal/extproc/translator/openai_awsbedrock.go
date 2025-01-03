@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/aws/aws-sdk-go/private/protocol/eventstream"
+	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extprocv3http "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
@@ -169,14 +169,8 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(body io.Read
 		return headerMutation, &extprocv3.BodyMutation{Mutation: mut}, usedToken, nil
 	}
 
-	buf, err := io.ReadAll(body)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to read body: %w", err)
-	}
-	fmt.Println(string(buf))
-
 	var awsResp awsbedrock.ConverseResponse
-	if err := json.NewDecoder(bytes.NewReader(buf)).Decode(&awsResp); err != nil {
+	if err := json.NewDecoder(body).Decode(&awsResp); err != nil {
 		return nil, nil, 0, fmt.Errorf("failed to unmarshal body: %w", err)
 	}
 
@@ -215,11 +209,11 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(body io.Read
 func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) extractAmazonEventStreamEvents() {
 	// TODO: Maybe reuse the reader and decoder.
 	r := bytes.NewReader(o.bufferedBody)
-	dec := eventstream.NewDecoder(r)
+	dec := eventstream.NewDecoder()
 	o.events = o.events[:0]
 	var lastRead int64
 	for {
-		msg, err := dec.Decode(nil)
+		msg, err := dec.Decode(r, nil)
 		if err != nil {
 			// When failed, we stop processing the events.
 			// Copy the unread bytes to the beginning of the buffer.
