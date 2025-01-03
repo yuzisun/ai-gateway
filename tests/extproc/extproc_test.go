@@ -3,8 +3,11 @@
 package extproc
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -37,12 +40,17 @@ var (
 //   - TEST_AWS_SECRET_ACCESS_KEY
 //   - TEST_OPENAI_API_KEY
 //
-// The test will be skipped if any of these are not set.
+// The test will fail if any of these are not set.
 func TestE2E(t *testing.T) {
 	requireBinaries(t)
-	requireRunEnvoy(t)
+	accessLogPath := t.TempDir() + "/access.log"
+	requireRunEnvoy(t, accessLogPath)
 	configPath := t.TempDir() + "/extproc-config.yaml"
 	requireWriteExtProcConfig(t, configPath, &extprocconfig.Config{
+		TokenUsageMetadata: &extprocconfig.TokenUsageMetadata{
+			Namespace: "ai_gateway_llm_ns",
+			Key:       "used_token",
+		},
 		InputSchema: openAISchema,
 		// This can be any header key, but it must match the envoy.yaml routing configuration.
 		BackendRoutingHeaderKey: "x-selected-backend-name",
@@ -92,6 +100,41 @@ func TestE2E(t *testing.T) {
 		}
 	})
 
+	// Read all access logs and check if the used token is logged.
+	// If the used token is set correctly in the metadata, it should be logged in the access log.
+	t.Run("check-used-token-metadata-access-log", func(t *testing.T) {
+		// Since the access log might not be written immediately, we wait for the log to be written.
+		require.Eventually(t, func() bool {
+			accessLog, err := os.ReadFile(accessLogPath)
+			require.NoError(t, err)
+			// This should match the format of the access log in envoy.yaml.
+			type lineFormat struct {
+				UsedToken any `json:"used_token"`
+			}
+			scanner := bufio.NewScanner(bytes.NewReader(accessLog))
+			for scanner.Scan() {
+				line := scanner.Bytes()
+				var l lineFormat
+				if err = json.Unmarshal(line, &l); err != nil {
+					t.Logf("error unmarshalling line: %v", err)
+					continue
+				}
+				t.Logf("line: %s", line)
+				// The access formatter somehow changed its behavior sometimes between 1.31 and the latest Envoy,
+				// so we need to check for both float64 and string.
+				if num, ok := l.UsedToken.(float64); ok && num > 0 {
+					return true
+				} else if str, ok := l.UsedToken.(string); ok {
+					if num, err := strconv.Atoi(str); err == nil && num > 0 {
+						return true
+					}
+				}
+				t.Log("cannot find used token in line")
+			}
+			return false
+		}, 10*time.Second, 1*time.Second)
+	})
+
 	// TODO: add streaming endpoints.
 	// TODO: add more tests like updating the config, signal handling, etc.
 }
@@ -115,11 +158,12 @@ func requireExtProc(t *testing.T, configPath string) {
 }
 
 // requireRunEnvoy starts the Envoy proxy with the provided configuration.
-func requireRunEnvoy(t *testing.T) {
+func requireRunEnvoy(t *testing.T, accessLogPath string) {
 	openAIAPIKey := requireEnvVar(t, "TEST_OPENAI_API_KEY")
 
 	tmpDir := t.TempDir()
 	envoyYaml := strings.Replace(envoyYamlBase, "TEST_OPENAI_API_KEY", openAIAPIKey, 1)
+	envoyYaml = strings.Replace(envoyYaml, "ACCESS_LOG_PATH", accessLogPath, 1)
 
 	// Write the envoy.yaml file.
 	envoyYamlPath := tmpDir + "/envoy.yaml"

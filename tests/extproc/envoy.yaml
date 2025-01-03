@@ -11,6 +11,13 @@ static_resources:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: ingress_http
                 codec_type: auto
+                access_log:
+                  - name: log_used_token
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+                      path: ACCESS_LOG_PATH
+                      json_format:
+                        "used_token": "%DYNAMIC_METADATA(ai_gateway_llm_ns:used_token)%"
                 route_config:
                   virtual_hosts:
                     - name: local_route
@@ -42,7 +49,6 @@ static_resources:
                 http_filters:
                   - name: envoy.filters.http.ext_proc
                     typed_config:
-                      # https://github.com/envoyproxy/envoy/pull/27263/files
                       "@type": type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
                       allow_mode_override: true
                       mutation_rules:
@@ -55,6 +61,10 @@ static_resources:
                       grpc_service:
                         envoy_grpc:
                           cluster_name: extproc_cluster
+                      metadataOptions:
+                        receivingNamespaces:
+                          untyped:
+                            - ai_gateway_llm_ns
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
