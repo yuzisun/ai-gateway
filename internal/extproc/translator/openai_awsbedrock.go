@@ -83,13 +83,11 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body router.R
 	// Convert Messages
 	bedrockReq.Messages = make([]*awsbedrock.Message, 0, len(openAIReq.Messages))
 	for _, msg := range openAIReq.Messages {
-		var role string
 		switch msg.Role {
 		case openai.ChatMessageRoleUser, openai.ChatMessageRoleAssistant:
-			role = msg.Role
 			text := msg.Content
 			bedrockReq.Messages = append(bedrockReq.Messages, &awsbedrock.Message{
-				Role: role,
+				Role: msg.Role,
 				Content: []*awsbedrock.ContentBlock{
 					{Text: &text},
 				},
@@ -102,6 +100,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body router.R
 				Text: msg.Content,
 			})
 		case openai.ChatMessageRoleTool:
+			text := msg.Content
 			bedrockReq.Messages = append(bedrockReq.Messages, &awsbedrock.Message{
 				// bedrock does not support tool role, merging to the user role
 				Role: awsbedrock.ConversationRoleUser,
@@ -110,7 +109,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body router.R
 						ToolResult: &awsbedrock.ToolResultBlock{
 							Content: []*awsbedrock.ToolResultContentBlock{
 								{
-									Text: &msg.Content,
+									Text: &text,
 								},
 							},
 						},

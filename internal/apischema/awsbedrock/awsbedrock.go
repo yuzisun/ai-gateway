@@ -437,7 +437,7 @@ type ToolConfiguration struct {
 // information, see Tool use (function calling) (https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use.html)
 // in the Amazon Bedrock User Guide.
 type Tool struct {
-	// The specfication for the tool.
+	// The specification for the tool.
 	ToolSpec *ToolSpecification `json:"toolSpec"`
 }
 
