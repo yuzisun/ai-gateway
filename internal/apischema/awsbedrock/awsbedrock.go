@@ -269,15 +269,15 @@ type DocumentBlock struct {
 // ToolResultContentBlock The tool result content block.
 type ToolResultContentBlock struct {
 	// A tool result that is a document.
-	Document *DocumentBlock `locationName:"document" type:"structure"`
+	Document *DocumentBlock `json:"document,omitempty"`
 
 	// A tool result that is an image.
 	//
 	// This field is only supported by Anthropic Claude 3 models.
-	Image *ImageBlock `locationName:"image" type:"structure"`
+	Image *ImageBlock `json:"image,omitempty"`
 
 	// A tool result that is text.
-	Text *string `locationName:"text" type:"string"`
+	Text *string `json:"text" type:"string,omitempty"`
 }
 
 // ToolResultBlock A tool result block that contains the results for a tool request that the
@@ -303,10 +303,10 @@ type ToolResultBlock struct {
 // https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ContentBlock.html
 type ContentBlock struct {
 	// Text to include in the message.
-	Text *string `locationName:"text" type:"string"`
+	Text *string `json:"text,omitempty"`
 
 	// The result for a tool request that a model makes.
-	ToolResult *ToolResultBlock `locationName:"toolResult" type:"structure"`
+	ToolResult *ToolResultBlock `json:"toolResult,omitempty"`
 }
 
 // ConverseMetrics Metrics for a call to Converse (https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html).
