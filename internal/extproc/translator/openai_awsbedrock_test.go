@@ -48,11 +48,35 @@ func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_RequestBody(t *testing.T) 
 			input: openai.ChatCompletionRequest{
 				Stream: false,
 				Model:  "gpt-4o",
-				Messages: []openai.ChatCompletionMessage{
-					{Content: "from-system", Role: openai.ChatMessageRoleSystem},
-					{Content: "from-user", Role: openai.ChatMessageRoleUser},
-					{Content: "part1", Role: openai.ChatMessageRoleUser},
-					{Content: "part2", Role: openai.ChatMessageRoleUser},
+				Messages: []openai.ChatCompletionMessageParamUnion{
+					{
+						Value: openai.ChatCompletionSystemMessageParam{
+							Content: openai.StringOrArray{
+								Value: "from-system",
+							},
+						}, Type: openai.ChatMessageRoleSystem,
+					},
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrArray{
+								Value: "from-user",
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrArray{
+								Value: "part1",
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrArray{
+								Value: "part2",
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
 				},
 			},
 			output: awsbedrock.ConverseInput{
@@ -98,8 +122,14 @@ func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_RequestBody(t *testing.T) 
 				MaxTokens:   ptr.To(int64(10)),
 				TopP:        ptr.To(float64(1)),
 				Temperature: ptr.To(0.7),
-				Messages: []openai.ChatCompletionMessage{
-					{Content: "from-user", Role: openai.ChatMessageRoleUser},
+				Messages: []openai.ChatCompletionMessageParamUnion{
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrArray{
+								Value: "from-user",
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
 				},
 			},
 			output: awsbedrock.ConverseInput{
@@ -128,8 +158,14 @@ func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_RequestBody(t *testing.T) 
 				MaxTokens:   ptr.To(int64(10)),
 				TopP:        ptr.To(float64(1)),
 				Temperature: ptr.To(0.7),
-				Messages: []openai.ChatCompletionMessage{
-					{Content: "from-user", Role: openai.ChatMessageRoleUser},
+				Messages: []openai.ChatCompletionMessageParamUnion{
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrArray{
+								Value: "from-user",
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
 				},
 				Tools: []openai.Tool{
 					{
@@ -581,6 +617,98 @@ func TestOpenAIToAWSBedrockTranslator_convertEvent(t *testing.T) {
 				require.False(t, ok)
 			} else {
 				require.Equal(t, *tc.out, chunk)
+			}
+		})
+	}
+}
+
+func TestOpenAIMessageUnmarshal(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   []byte
+		out  *openai.ChatCompletionRequest
+	}{
+		{
+			name: "basic test",
+			in: []byte(`{"model": "gpu-o4",
+                        "messages": [
+                         {"role": "system", "content": "you are a helpful assistant"},
+                         {"role": "user", "content": "what do you see in this image"}]}`),
+			out: &openai.ChatCompletionRequest{
+				Model: "gpu-o4",
+				Messages: []openai.ChatCompletionMessageParamUnion{
+					{
+						Value: openai.ChatCompletionSystemMessageParam{
+							Role: openai.ChatMessageRoleSystem,
+							Content: openai.StringOrArray{
+								Value: "you are a helpful assistant",
+							},
+						},
+						Type: openai.ChatMessageRoleSystem,
+					},
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Role: openai.ChatMessageRoleUser,
+							Content: openai.StringOrArray{
+								Value: "what do you see in this image",
+							},
+						},
+						Type: openai.ChatMessageRoleUser,
+					},
+				},
+			},
+		},
+		{
+			name: "content with array",
+			in: []byte(`{"model": "gpu-o4",
+                        "messages": [
+                         {"role": "system", "content": [{"text": "you are a helpful assistant", "type": "text"}]},
+                         {"role": "user", "content": [{"text": "what do you see in this image", "type": "text"}]}]}`),
+			out: &openai.ChatCompletionRequest{
+				Model: "gpu-o4",
+				Messages: []openai.ChatCompletionMessageParamUnion{
+					{
+						Value: openai.ChatCompletionSystemMessageParam{
+							Role: openai.ChatMessageRoleSystem,
+							Content: openai.StringOrArray{
+								Value: []openai.ChatCompletionContentPartUnionParam{
+									{
+										Value: openai.ChatCompletionContentPartTextParam{
+											Text: "you are a helpful assistant",
+											Type: string(openai.ChatCompletionContentPartTextTypeText),
+										},
+									},
+								},
+							},
+						},
+						Type: openai.ChatMessageRoleSystem,
+					},
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Role: openai.ChatMessageRoleUser,
+							Content: openai.StringOrArray{
+								Value: []openai.ChatCompletionContentPartUnionParam{
+									{
+										Value: openai.ChatCompletionContentPartTextParam{
+											Text: "what do you see in this image",
+											Type: string(openai.ChatCompletionContentPartTextTypeText),
+										},
+									},
+								},
+							},
+						},
+						Type: openai.ChatMessageRoleUser,
+					},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var chatCompletion openai.ChatCompletionRequest
+			err := json.Unmarshal(tc.in, &chatCompletion)
+			require.NoError(t, err)
+			if !cmp.Equal(&chatCompletion, tc.out) {
+				t.Errorf("UnmarshalOpenAIRequest(), diff(got, expected) = %s\n", cmp.Diff(&chatCompletion, tc.out))
 			}
 		})
 	}

@@ -11,6 +11,7 @@ import (
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extprocv3http "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
+	"k8s.io/utils/ptr"
 
 	"github.com/envoyproxy/ai-gateway/internal/apischema/awsbedrock"
 	"github.com/envoyproxy/ai-gateway/internal/apischema/openai"
@@ -65,7 +66,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body router.R
 	}
 
 	var bedrockReq awsbedrock.ConverseInput
-	// Convert InferenceConfiguration
+	// Convert InferenceConfiguration.
 	bedrockReq.InferenceConfig = &awsbedrock.InferenceConfiguration{}
 	if openAIReq.MaxTokens != nil {
 		bedrockReq.InferenceConfig.MaxTokens = openAIReq.MaxTokens
@@ -80,27 +81,45 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body router.R
 		bedrockReq.InferenceConfig.TopP = openAIReq.TopP
 	}
 
-	// Convert Messages
+	// Convert Messages.
 	bedrockReq.Messages = make([]*awsbedrock.Message, 0, len(openAIReq.Messages))
 	for _, msg := range openAIReq.Messages {
-		switch msg.Role {
-		case openai.ChatMessageRoleUser, openai.ChatMessageRoleAssistant:
-			text := msg.Content
+		switch msg.Type {
+		case openai.ChatMessageRoleUser:
+			message := msg.Value.(openai.ChatCompletionUserMessageParam)
 			bedrockReq.Messages = append(bedrockReq.Messages, &awsbedrock.Message{
-				Role: msg.Role,
+				Role: msg.Type,
 				Content: []*awsbedrock.ContentBlock{
-					{Text: &text},
+					{Text: ptr.To(message.Content.Value.(string))},
 				},
 			})
+		case openai.ChatMessageRoleAssistant:
+			message := msg.Value.(openai.ChatCompletionAssistantMessageParam)
+			if message.Content.Type == openai.ChatCompletionAssistantMessageParamContentTypeRefusal {
+				bedrockReq.Messages = append(bedrockReq.Messages, &awsbedrock.Message{
+					Role: msg.Type,
+					Content: []*awsbedrock.ContentBlock{
+						{Text: message.Content.Refusal},
+					},
+				})
+			} else {
+				bedrockReq.Messages = append(bedrockReq.Messages, &awsbedrock.Message{
+					Role: msg.Type,
+					Content: []*awsbedrock.ContentBlock{
+						{Text: message.Content.Text},
+					},
+				})
+			}
 		case openai.ChatMessageRoleSystem:
+			message := msg.Value.(openai.ChatCompletionSystemMessageParam)
 			if bedrockReq.System == nil {
 				bedrockReq.System = []*awsbedrock.SystemContentBlock{}
 			}
 			bedrockReq.System = append(bedrockReq.System, &awsbedrock.SystemContentBlock{
-				Text: msg.Content,
+				Text: message.Content.Value.(string),
 			})
 		case openai.ChatMessageRoleTool:
-			text := msg.Content
+			message := msg.Value.(openai.ChatCompletionToolMessageParam)
 			bedrockReq.Messages = append(bedrockReq.Messages, &awsbedrock.Message{
 				// bedrock does not support tool role, merging to the user role
 				Role: awsbedrock.ConversationRoleUser,
@@ -109,7 +128,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body router.R
 						ToolResult: &awsbedrock.ToolResultBlock{
 							Content: []*awsbedrock.ToolResultContentBlock{
 								{
-									Text: &text,
+									Text: message.Content.Value.(*string),
 								},
 							},
 						},
@@ -117,10 +136,10 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body router.R
 				},
 			})
 		default:
-			return nil, nil, nil, fmt.Errorf("unexpected role: %s", msg.Role)
+			return nil, nil, nil, fmt.Errorf("unexpected role: %s", msg.Type)
 		}
 	}
-	// Convert ToolConfig
+	// Convert ToolConfiguration.
 	if len(openAIReq.Tools) > 0 {
 		bedrockReq.ToolConfig = &awsbedrock.ToolConfiguration{}
 		tools := make([]*awsbedrock.Tool, 0, len(openAIReq.Tools))

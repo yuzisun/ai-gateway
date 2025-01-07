@@ -6,28 +6,28 @@ import (
 )
 
 const (
-	// StopReasonEndTurn is a StopReason enum value
+	// StopReasonEndTurn is a StopReason enum value.
 	StopReasonEndTurn = "end_turn"
 
-	// StopReasonToolUse is a StopReason enum value
+	// StopReasonToolUse is a StopReason enum value.
 	StopReasonToolUse = "tool_use"
 
-	// StopReasonMaxTokens is a StopReason enum value
+	// StopReasonMaxTokens is a StopReason enum value.
 	StopReasonMaxTokens = "max_tokens"
 
-	// StopReasonStopSequence is a StopReason enum value
+	// StopReasonStopSequence is a StopReason enum value.
 	StopReasonStopSequence = "stop_sequence"
 
-	// StopReasonGuardrailIntervened is a StopReason enum value
+	// StopReasonGuardrailIntervened is a StopReason enum value.
 	StopReasonGuardrailIntervened = "guardrail_intervened"
 
-	// StopReasonContentFiltered is a StopReason enum value
+	// StopReasonContentFiltered is a StopReason enum value.
 	StopReasonContentFiltered = "content_filtered"
 
-	// ConversationRoleUser is a ConversationRole enum value
+	// ConversationRoleUser is a ConversationRole enum value.
 	ConversationRoleUser = "user"
 
-	// ConversationRoleAssistant is a ConversationRole enum value
+	// ConversationRoleAssistant is a ConversationRole enum value.
 	ConversationRoleAssistant = "assistant"
 )
 
@@ -441,7 +441,7 @@ type Tool struct {
 	ToolSpec *ToolSpecification `json:"toolSpec"`
 }
 
-// ToolInputSchema The schema for the tool. The top level schema type must be object.
+// ToolInputSchema The schema for the tool. The top level schema type must be an object.
 type ToolInputSchema struct {
 	JSON any `json:"json"`
 }
