@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
@@ -80,96 +81,9 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body router.R
 	if openAIReq.TopP != nil {
 		bedrockReq.InferenceConfig.TopP = openAIReq.TopP
 	}
-
-	// Convert Messages.
-	bedrockReq.Messages = make([]*awsbedrock.Message, 0, len(openAIReq.Messages))
-	for _, msg := range openAIReq.Messages {
-		switch msg.Type {
-		case openai.ChatMessageRoleUser:
-			message := msg.Value.(openai.ChatCompletionUserMessageParam)
-			if _, ok := message.Content.Value.(string); ok {
-				bedrockReq.Messages = append(bedrockReq.Messages, &awsbedrock.Message{
-					Role: msg.Type,
-					Content: []*awsbedrock.ContentBlock{
-						{Text: ptr.To(message.Content.Value.(string))},
-					},
-				})
-			} else {
-				if contents, ok := message.Content.Value.([]openai.ChatCompletionContentPartUserUnionParam); ok {
-					chatMessage := &awsbedrock.Message{Role: msg.Type}
-					chatMessage.Content = make([]*awsbedrock.ContentBlock, 0, len(contents))
-					for _, contentPart := range contents {
-						if contentPart.TextContent != nil {
-							textContentPart := contentPart.TextContent
-							chatMessage.Content = append(chatMessage.Content, &awsbedrock.ContentBlock{
-								Text: &textContentPart.Text,
-							})
-						}
-					}
-					bedrockReq.Messages = append(bedrockReq.Messages, chatMessage)
-				} else {
-					return nil, nil, nil, fmt.Errorf("unexpected content type for user message")
-				}
-			}
-		case openai.ChatMessageRoleAssistant:
-			message := msg.Value.(openai.ChatCompletionAssistantMessageParam)
-			if message.Content.Type == openai.ChatCompletionAssistantMessageParamContentTypeRefusal {
-				bedrockReq.Messages = append(bedrockReq.Messages, &awsbedrock.Message{
-					Role: msg.Type,
-					Content: []*awsbedrock.ContentBlock{
-						{Text: message.Content.Refusal},
-					},
-				})
-			} else {
-				bedrockReq.Messages = append(bedrockReq.Messages, &awsbedrock.Message{
-					Role: msg.Type,
-					Content: []*awsbedrock.ContentBlock{
-						{Text: message.Content.Text},
-					},
-				})
-			}
-		case openai.ChatMessageRoleSystem:
-			message := msg.Value.(openai.ChatCompletionSystemMessageParam)
-			if bedrockReq.System == nil {
-				bedrockReq.System = []*awsbedrock.SystemContentBlock{}
-			}
-
-			if _, ok := message.Content.Value.(string); ok {
-				bedrockReq.System = append(bedrockReq.System, &awsbedrock.SystemContentBlock{
-					Text: message.Content.Value.(string),
-				})
-			} else {
-				if contents, ok := message.Content.Value.([]openai.ChatCompletionContentPartTextParam); ok {
-					for _, contentPart := range contents {
-						textContentPart := contentPart.Text
-						bedrockReq.System = append(bedrockReq.System, &awsbedrock.SystemContentBlock{
-							Text: textContentPart,
-						})
-					}
-				} else {
-					return nil, nil, nil, fmt.Errorf("unexpected content type for system message")
-				}
-			}
-		case openai.ChatMessageRoleTool:
-			message := msg.Value.(openai.ChatCompletionToolMessageParam)
-			bedrockReq.Messages = append(bedrockReq.Messages, &awsbedrock.Message{
-				// bedrock does not support tool role, merging to the user role
-				Role: awsbedrock.ConversationRoleUser,
-				Content: []*awsbedrock.ContentBlock{
-					{
-						ToolResult: &awsbedrock.ToolResultBlock{
-							Content: []*awsbedrock.ToolResultContentBlock{
-								{
-									Text: message.Content.Value.(*string),
-								},
-							},
-						},
-					},
-				},
-			})
-		default:
-			return nil, nil, nil, fmt.Errorf("unexpected role: %s", msg.Type)
-		}
+	err = o.OpenAIMessageToBedrockMessage(openAIReq, &bedrockReq)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	// Convert ToolConfiguration.
 	if len(openAIReq.Tools) > 0 {
@@ -224,6 +138,119 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body router.R
 	}
 	setContentLength(headerMutation, mut.Body)
 	return headerMutation, &extprocv3.BodyMutation{Mutation: mut}, override, nil
+}
+
+func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) OpenAIMessageToBedrockMessage(openAIReq *openai.ChatCompletionRequest,
+	bedrockReq *awsbedrock.ConverseInput,
+) error {
+	// Convert Messages.
+	bedrockReq.Messages = make([]*awsbedrock.Message, 0, len(openAIReq.Messages))
+	for _, msg := range openAIReq.Messages {
+		switch msg.Type {
+		case openai.ChatMessageRoleUser:
+			message := msg.Value.(openai.ChatCompletionUserMessageParam)
+			if _, ok := message.Content.Value.(string); ok {
+				bedrockReq.Messages = append(bedrockReq.Messages, &awsbedrock.Message{
+					Role: msg.Type,
+					Content: []*awsbedrock.ContentBlock{
+						{Text: ptr.To(message.Content.Value.(string))},
+					},
+				})
+			} else {
+				if contents, ok := message.Content.Value.([]openai.ChatCompletionContentPartUserUnionParam); ok {
+					chatMessage := &awsbedrock.Message{Role: msg.Type}
+					chatMessage.Content = make([]*awsbedrock.ContentBlock, 0, len(contents))
+					for _, contentPart := range contents {
+						if contentPart.TextContent != nil {
+							textContentPart := contentPart.TextContent
+							chatMessage.Content = append(chatMessage.Content, &awsbedrock.ContentBlock{
+								Text: &textContentPart.Text,
+							})
+						} else if contentPart.ImageContent != nil {
+							imageContentPart := contentPart.ImageContent
+							parts := strings.Split(imageContentPart.ImageURL.URL, ",")
+							if len(parts) == 2 {
+								formatPart := strings.Split(parts[0], ";")[0]
+								format := strings.TrimPrefix(formatPart, "data:image/")
+								chatMessage.Content = append(chatMessage.Content, &awsbedrock.ContentBlock{
+									Image: &awsbedrock.ImageBlock{
+										Format: format,
+										Source: awsbedrock.ImageSource{
+											Bytes: []byte(parts[1]),
+										},
+									},
+								})
+							} else {
+								return fmt.Errorf("unexpected image data url")
+							}
+						}
+					}
+					bedrockReq.Messages = append(bedrockReq.Messages, chatMessage)
+				} else {
+					return fmt.Errorf("unexpected content type for user message")
+				}
+			}
+		case openai.ChatMessageRoleAssistant:
+			message := msg.Value.(openai.ChatCompletionAssistantMessageParam)
+			if message.Content.Type == openai.ChatCompletionAssistantMessageParamContentTypeRefusal {
+				bedrockReq.Messages = append(bedrockReq.Messages, &awsbedrock.Message{
+					Role: msg.Type,
+					Content: []*awsbedrock.ContentBlock{
+						{Text: message.Content.Refusal},
+					},
+				})
+			} else {
+				bedrockReq.Messages = append(bedrockReq.Messages, &awsbedrock.Message{
+					Role: msg.Type,
+					Content: []*awsbedrock.ContentBlock{
+						{Text: message.Content.Text},
+					},
+				})
+			}
+		case openai.ChatMessageRoleSystem:
+			message := msg.Value.(openai.ChatCompletionSystemMessageParam)
+			if bedrockReq.System == nil {
+				bedrockReq.System = []*awsbedrock.SystemContentBlock{}
+			}
+
+			if _, ok := message.Content.Value.(string); ok {
+				bedrockReq.System = append(bedrockReq.System, &awsbedrock.SystemContentBlock{
+					Text: message.Content.Value.(string),
+				})
+			} else {
+				if contents, ok := message.Content.Value.([]openai.ChatCompletionContentPartTextParam); ok {
+					for _, contentPart := range contents {
+						textContentPart := contentPart.Text
+						bedrockReq.System = append(bedrockReq.System, &awsbedrock.SystemContentBlock{
+							Text: textContentPart,
+						})
+					}
+				} else {
+					return fmt.Errorf("unexpected content type for system message")
+				}
+			}
+		case openai.ChatMessageRoleTool:
+			message := msg.Value.(openai.ChatCompletionToolMessageParam)
+			bedrockReq.Messages = append(bedrockReq.Messages, &awsbedrock.Message{
+				// bedrock does not support tool role, merging to the user role
+				Role: awsbedrock.ConversationRoleUser,
+				Content: []*awsbedrock.ContentBlock{
+					{
+						ToolResult: &awsbedrock.ToolResultBlock{
+							Content: []*awsbedrock.ToolResultContentBlock{
+								{
+									Text: message.Content.Value.(*string),
+								},
+							},
+						},
+					},
+				},
+			})
+		default:
+			return fmt.Errorf("unexpected role: %s", msg.Type)
+		}
+	}
+	return nil
 }
 
 // ResponseHeaders implements [Translator.ResponseHeaders].

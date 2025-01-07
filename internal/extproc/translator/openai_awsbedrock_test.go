@@ -194,6 +194,60 @@ func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_RequestBody(t *testing.T) 
 			},
 		},
 		{
+			name: "test image",
+			input: openai.ChatCompletionRequest{
+				Stream: false,
+				Model:  "gpt-4o",
+				Messages: []openai.ChatCompletionMessageParamUnion{
+					{
+						Value: openai.ChatCompletionSystemMessageParam{
+							Content: openai.StringOrArray{
+								Value: []openai.ChatCompletionContentPartTextParam{
+									{Text: "from-system"},
+								},
+							},
+						}, Type: openai.ChatMessageRoleSystem,
+					},
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrUserRoleContentUnion{
+								Value: []openai.ChatCompletionContentPartUserUnionParam{
+									{ImageContent: &openai.ChatCompletionContentPartImageParam{
+										ImageURL: openai.ChatCompletionContentPartImageImageURLParam{
+											URL: "data:image/jpeg;base64,dGVzdAo=",
+										},
+									}},
+								},
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
+				},
+			},
+			output: awsbedrock.ConverseInput{
+				InferenceConfig: &awsbedrock.InferenceConfiguration{},
+				System: []*awsbedrock.SystemContentBlock{
+					{
+						Text: "from-system",
+					},
+				},
+				Messages: []*awsbedrock.Message{
+					{
+						Role: openai.ChatMessageRoleUser,
+						Content: []*awsbedrock.ContentBlock{
+							{
+								Image: &awsbedrock.ImageBlock{
+									Source: awsbedrock.ImageSource{
+										Bytes: []byte("dGVzdAo="),
+									},
+									Format: "jpeg",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "test parameters",
 			input: openai.ChatCompletionRequest{
 				Stream:      false,

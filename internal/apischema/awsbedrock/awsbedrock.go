@@ -302,6 +302,13 @@ type ToolResultBlock struct {
 // ContentBlock is defined in the AWS Bedrock API:
 // https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ContentBlock.html
 type ContentBlock struct {
+	// A tool result that is a document.
+	Document *DocumentBlock `json:"document,omitempty"`
+
+	// A tool result that is an image.
+	//
+	// This field is only supported by Anthropic Claude 3 models.
+	Image *ImageBlock `json:"image,omitempty"`
 	// Text to include in the message.
 	Text *string `json:"text,omitempty"`
 
