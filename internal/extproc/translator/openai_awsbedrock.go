@@ -106,7 +106,8 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body router.R
 
 // OpenAIToolsToBedrockToolConfiguration converts openai ChatCompletion tools to aws bedrock tool configurations
 func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) OpenAIToolsToBedrockToolConfiguration(openAIReq *openai.ChatCompletionRequest,
-	bedrockReq *awsbedrock.ConverseInput) error {
+	bedrockReq *awsbedrock.ConverseInput,
+) error {
 	bedrockReq.ToolConfig = &awsbedrock.ToolConfiguration{}
 	tools := make([]*awsbedrock.Tool, 0, len(openAIReq.Tools))
 	for _, toolDefinition := range openAIReq.Tools {
