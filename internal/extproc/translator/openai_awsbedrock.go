@@ -81,52 +81,16 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body router.R
 	if openAIReq.TopP != nil {
 		bedrockReq.InferenceConfig.TopP = openAIReq.TopP
 	}
+	// Convert Chat Completion messages.
 	err = o.OpenAIMessageToBedrockMessage(openAIReq, &bedrockReq)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	// Convert ToolConfiguration.
 	if len(openAIReq.Tools) > 0 {
-		bedrockReq.ToolConfig = &awsbedrock.ToolConfiguration{}
-		tools := make([]*awsbedrock.Tool, 0, len(openAIReq.Tools))
-		for _, toolDefinition := range openAIReq.Tools {
-			toolType := (string)(toolDefinition.Type)
-			tool := &awsbedrock.Tool{
-				ToolSpec: &awsbedrock.ToolSpecification{
-					Name:        &toolType,
-					Description: &toolDefinition.Function.Description,
-					InputSchema: &awsbedrock.ToolInputSchema{
-						JSON: toolDefinition.Function.Parameters,
-					},
-				},
-			}
-			tools = append(tools, tool)
-		}
-		bedrockReq.ToolConfig.Tools = tools
-
-		if openAIReq.ToolChoice != nil {
-			switch reflect.TypeOf(openAIReq.ToolChoice).Kind() {
-			case reflect.String:
-				if openAIReq.ToolChoice.(string) == "auto" {
-					bedrockReq.ToolConfig.ToolChoice = &awsbedrock.ToolChoice{
-						Auto: &awsbedrock.AutoToolChoice{},
-					}
-				} else {
-					bedrockReq.ToolConfig.ToolChoice = &awsbedrock.ToolChoice{
-						Any: &awsbedrock.AnyToolChoice{},
-					}
-				}
-			case reflect.Struct:
-				toolChoice := openAIReq.ToolChoice.(openai.ToolChoice)
-				tool := (string)(toolChoice.Type)
-				bedrockReq.ToolConfig.ToolChoice = &awsbedrock.ToolChoice{
-					Tool: &awsbedrock.SpecificToolChoice{
-						Name: &tool,
-					},
-				}
-			default:
-				return nil, nil, nil, fmt.Errorf("unexpected type: %s", reflect.TypeOf(openAIReq.ToolChoice).Kind())
-			}
+		err = o.OpenAIToolsToBedrockToolConfiguration(openAIReq, &bedrockReq)
+		if err != nil {
+			return nil, nil, nil, err
 		}
 	}
 
@@ -140,6 +104,54 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body router.R
 	return headerMutation, &extprocv3.BodyMutation{Mutation: mut}, override, nil
 }
 
+// OpenAIToolsToBedrockToolConfiguration converts openai ChatCompletion tools to aws bedrock tool configurations
+func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) OpenAIToolsToBedrockToolConfiguration(openAIReq *openai.ChatCompletionRequest,
+	bedrockReq *awsbedrock.ConverseInput) error {
+	bedrockReq.ToolConfig = &awsbedrock.ToolConfiguration{}
+	tools := make([]*awsbedrock.Tool, 0, len(openAIReq.Tools))
+	for _, toolDefinition := range openAIReq.Tools {
+		toolType := (string)(toolDefinition.Type)
+		tool := &awsbedrock.Tool{
+			ToolSpec: &awsbedrock.ToolSpecification{
+				Name:        &toolType,
+				Description: &toolDefinition.Function.Description,
+				InputSchema: &awsbedrock.ToolInputSchema{
+					JSON: toolDefinition.Function.Parameters,
+				},
+			},
+		}
+		tools = append(tools, tool)
+	}
+	bedrockReq.ToolConfig.Tools = tools
+
+	if openAIReq.ToolChoice != nil {
+		switch reflect.TypeOf(openAIReq.ToolChoice).Kind() {
+		case reflect.String:
+			if openAIReq.ToolChoice.(string) == "auto" {
+				bedrockReq.ToolConfig.ToolChoice = &awsbedrock.ToolChoice{
+					Auto: &awsbedrock.AutoToolChoice{},
+				}
+			} else {
+				bedrockReq.ToolConfig.ToolChoice = &awsbedrock.ToolChoice{
+					Any: &awsbedrock.AnyToolChoice{},
+				}
+			}
+		case reflect.Struct:
+			toolChoice := openAIReq.ToolChoice.(openai.ToolChoice)
+			tool := (string)(toolChoice.Type)
+			bedrockReq.ToolConfig.ToolChoice = &awsbedrock.ToolChoice{
+				Tool: &awsbedrock.SpecificToolChoice{
+					Name: &tool,
+				},
+			}
+		default:
+			return fmt.Errorf("unexpected type: %s", reflect.TypeOf(openAIReq.ToolChoice).Kind())
+		}
+	}
+	return nil
+}
+
+// OpenAIMessageToBedrockMessage converts openai ChatCompletion messages to aws bedrock messages
 func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) OpenAIMessageToBedrockMessage(openAIReq *openai.ChatCompletionRequest,
 	bedrockReq *awsbedrock.ConverseInput,
 ) error {
