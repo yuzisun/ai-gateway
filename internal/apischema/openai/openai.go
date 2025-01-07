@@ -98,13 +98,15 @@ type ChatCompletionContentPartImageParam struct {
 	Type ChatCompletionContentPartImageType `json:"type"`
 }
 
-// ChatCompletionContentPartUnionParam Learn about
+// ChatCompletionContentPartUserUnionParam Learn about
 // [text inputs](https://platform.openai.com/docs/guides/text-generation).
-type ChatCompletionContentPartUnionParam struct {
-	Value interface{}
+type ChatCompletionContentPartUserUnionParam struct {
+	TextContent       *ChatCompletionContentPartTextParam
+	InputAudioContent *ChatCompletionContentPartInputAudioParam
+	ImageContent      *ChatCompletionContentPartImageParam
 }
 
-func (c *ChatCompletionContentPartUnionParam) UnmarshalJSON(data []byte) error {
+func (c *ChatCompletionContentPartUserUnionParam) UnmarshalJSON(data []byte) error {
 	var chatContentPart map[string]interface{}
 	if err := json.Unmarshal(data, &chatContentPart); err != nil {
 		return err
@@ -120,25 +122,19 @@ func (c *ChatCompletionContentPartUnionParam) UnmarshalJSON(data []byte) error {
 		if err := json.Unmarshal(data, &textContent); err != nil {
 			return err
 		}
-		c.Value = textContent
+		c.TextContent = &textContent
 	case string(ChatCompletionContentPartInputAudioTypeInputAudio):
 		var audioContent ChatCompletionContentPartInputAudioParam
 		if err := json.Unmarshal(data, &audioContent); err != nil {
 			return err
 		}
-		c.Value = audioContent
+		c.InputAudioContent = &audioContent
 	case string(ChatCompletionContentPartImageTypeImageURL):
 		var imageContent ChatCompletionContentPartImageParam
 		if err := json.Unmarshal(data, &imageContent); err != nil {
 			return err
 		}
-		c.Value = imageContent
-	case string(ChatCompletionContentPartRefusalTypeRefusal):
-		var refusalContent ChatCompletionContentPartRefusalParam
-		if err := json.Unmarshal(data, &refusalContent); err != nil {
-			return err
-		}
-		c.Value = refusalContent
+		c.ImageContent = &imageContent
 	default:
 		return fmt.Errorf("unknown ChatCompletionContentPartUnionParam type: %v", contentType)
 	}
@@ -157,7 +153,29 @@ func (s *StringOrArray) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	var arr []ChatCompletionContentPartUnionParam
+	var arr []ChatCompletionContentPartTextParam
+	err = json.Unmarshal(data, &arr)
+	if err == nil {
+		s.Value = arr
+		return nil
+	}
+
+	return fmt.Errorf("cannot unmarshal JSON data as string or array of string")
+}
+
+type StringOrUserRoleContentUnion struct {
+	Value interface{}
+}
+
+func (s *StringOrUserRoleContentUnion) UnmarshalJSON(data []byte) error {
+	var str string
+	err := json.Unmarshal(data, &str)
+	if err == nil {
+		s.Value = str
+		return nil
+	}
+
+	var arr []ChatCompletionContentPartUserUnionParam
 	err = json.Unmarshal(data, &arr)
 	if err == nil {
 		s.Value = arr
@@ -224,7 +242,7 @@ func (c *ChatCompletionMessageParamUnion) UnmarshalJSON(data []byte) error {
 // information.
 type ChatCompletionUserMessageParam struct {
 	// The contents of the user message.
-	Content StringOrArray `json:"content"`
+	Content StringOrUserRoleContentUnion `json:"content"`
 	// The role of the messages author, in this case `user`.
 	Role string `json:"role"`
 	// An optional name for the participant. Provides the model information to

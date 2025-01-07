@@ -58,21 +58,21 @@ func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_RequestBody(t *testing.T) 
 					},
 					{
 						Value: openai.ChatCompletionUserMessageParam{
-							Content: openai.StringOrArray{
+							Content: openai.StringOrUserRoleContentUnion{
 								Value: "from-user",
 							},
 						}, Type: openai.ChatMessageRoleUser,
 					},
 					{
 						Value: openai.ChatCompletionUserMessageParam{
-							Content: openai.StringOrArray{
+							Content: openai.StringOrUserRoleContentUnion{
 								Value: "part1",
 							},
 						}, Type: openai.ChatMessageRoleUser,
 					},
 					{
 						Value: openai.ChatCompletionUserMessageParam{
-							Content: openai.StringOrArray{
+							Content: openai.StringOrUserRoleContentUnion{
 								Value: "part2",
 							},
 						}, Type: openai.ChatMessageRoleUser,
@@ -115,6 +115,85 @@ func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_RequestBody(t *testing.T) 
 			},
 		},
 		{
+			name: "test content array",
+			input: openai.ChatCompletionRequest{
+				Stream: false,
+				Model:  "gpt-4o",
+				Messages: []openai.ChatCompletionMessageParamUnion{
+					{
+						Value: openai.ChatCompletionSystemMessageParam{
+							Content: openai.StringOrArray{
+								Value: []openai.ChatCompletionContentPartTextParam{
+									{Text: "from-system"},
+								},
+							},
+						}, Type: openai.ChatMessageRoleSystem,
+					},
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrUserRoleContentUnion{
+								Value: []openai.ChatCompletionContentPartUserUnionParam{
+									{TextContent: &openai.ChatCompletionContentPartTextParam{Text: "from-user"}},
+								},
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrUserRoleContentUnion{
+								Value: []openai.ChatCompletionContentPartUserUnionParam{
+									{TextContent: &openai.ChatCompletionContentPartTextParam{Text: "user1"}},
+								},
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrUserRoleContentUnion{
+								Value: []openai.ChatCompletionContentPartUserUnionParam{
+									{TextContent: &openai.ChatCompletionContentPartTextParam{Text: "user2"}},
+								},
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
+				},
+			},
+			output: awsbedrock.ConverseInput{
+				InferenceConfig: &awsbedrock.InferenceConfiguration{},
+				System: []*awsbedrock.SystemContentBlock{
+					{
+						Text: "from-system",
+					},
+				},
+				Messages: []*awsbedrock.Message{
+					{
+						Role: openai.ChatMessageRoleUser,
+						Content: []*awsbedrock.ContentBlock{
+							{
+								Text: ptr.To("from-user"),
+							},
+						},
+					},
+					{
+						Role: openai.ChatMessageRoleUser,
+						Content: []*awsbedrock.ContentBlock{
+							{
+								Text: ptr.To("user1"),
+							},
+						},
+					},
+					{
+						Role: openai.ChatMessageRoleUser,
+						Content: []*awsbedrock.ContentBlock{
+							{
+								Text: ptr.To("user2"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "test parameters",
 			input: openai.ChatCompletionRequest{
 				Stream:      false,
@@ -125,7 +204,7 @@ func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_RequestBody(t *testing.T) 
 				Messages: []openai.ChatCompletionMessageParamUnion{
 					{
 						Value: openai.ChatCompletionUserMessageParam{
-							Content: openai.StringOrArray{
+							Content: openai.StringOrUserRoleContentUnion{
 								Value: "from-user",
 							},
 						}, Type: openai.ChatMessageRoleUser,
@@ -161,7 +240,7 @@ func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_RequestBody(t *testing.T) 
 				Messages: []openai.ChatCompletionMessageParamUnion{
 					{
 						Value: openai.ChatCompletionUserMessageParam{
-							Content: openai.StringOrArray{
+							Content: openai.StringOrUserRoleContentUnion{
 								Value: "from-user",
 							},
 						}, Type: openai.ChatMessageRoleUser,
@@ -649,7 +728,7 @@ func TestOpenAIMessageUnmarshal(t *testing.T) {
 					{
 						Value: openai.ChatCompletionUserMessageParam{
 							Role: openai.ChatMessageRoleUser,
-							Content: openai.StringOrArray{
+							Content: openai.StringOrUserRoleContentUnion{
 								Value: "what do you see in this image",
 							},
 						},
@@ -671,12 +750,10 @@ func TestOpenAIMessageUnmarshal(t *testing.T) {
 						Value: openai.ChatCompletionSystemMessageParam{
 							Role: openai.ChatMessageRoleSystem,
 							Content: openai.StringOrArray{
-								Value: []openai.ChatCompletionContentPartUnionParam{
+								Value: []openai.ChatCompletionContentPartTextParam{
 									{
-										Value: openai.ChatCompletionContentPartTextParam{
-											Text: "you are a helpful assistant",
-											Type: string(openai.ChatCompletionContentPartTextTypeText),
-										},
+										Text: "you are a helpful assistant",
+										Type: string(openai.ChatCompletionContentPartTextTypeText),
 									},
 								},
 							},
@@ -686,13 +763,10 @@ func TestOpenAIMessageUnmarshal(t *testing.T) {
 					{
 						Value: openai.ChatCompletionUserMessageParam{
 							Role: openai.ChatMessageRoleUser,
-							Content: openai.StringOrArray{
-								Value: []openai.ChatCompletionContentPartUnionParam{
+							Content: openai.StringOrUserRoleContentUnion{
+								Value: []openai.ChatCompletionContentPartUserUnionParam{
 									{
-										Value: openai.ChatCompletionContentPartTextParam{
-											Text: "what do you see in this image",
-											Type: string(openai.ChatCompletionContentPartTextTypeText),
-										},
+										TextContent: &openai.ChatCompletionContentPartTextParam{Text: "what do you see in this image", Type: "text"},
 									},
 								},
 							},
