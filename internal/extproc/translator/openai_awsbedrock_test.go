@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,7 +11,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
 	extprocv3http "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
+	"k8s.io/utils/ptr"
 
 	"github.com/envoyproxy/ai-gateway/internal/apischema/awsbedrock"
 	"github.com/envoyproxy/ai-gateway/internal/apischema/openai"
@@ -37,66 +38,376 @@ func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_RequestBody(t *testing.T) 
 		_, _, _, err := o.RequestBody(&extprocv3.HttpBody{Body: []byte("invalid")})
 		require.Error(t, err)
 	})
-	t.Run("valid body", func(t *testing.T) {
-		contentify := func(msg string) any {
-			return []any{map[string]any{"text": msg}}
-		}
-		for _, stream := range []bool{true, false} {
-			t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {
-				o := &openAIToAWSBedrockTranslatorV1ChatCompletion{}
-				originalReq := openai.ChatCompletionRequest{
-					Stream: stream,
-					Model:  "gpt-4o",
-					Messages: []openai.ChatCompletionRequestMessage{
-						{Content: contentify("from-system"), Role: "system"},
-						{Content: contentify("from-user"), Role: "user"},
-						{Content: contentify("part1"), Role: "user"},
-						{Content: contentify("part2"), Role: "user"},
+	tests := []struct {
+		name   string
+		output awsbedrock.ConverseInput
+		input  openai.ChatCompletionRequest
+	}{
+		{
+			name: "basic test",
+			input: openai.ChatCompletionRequest{
+				Stream: false,
+				Model:  "gpt-4o",
+				Messages: []openai.ChatCompletionMessageParamUnion{
+					{
+						Value: openai.ChatCompletionSystemMessageParam{
+							Content: openai.StringOrArray{
+								Value: "from-system",
+							},
+						}, Type: openai.ChatMessageRoleSystem,
 					},
-				}
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrUserRoleContentUnion{
+								Value: "from-user",
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrUserRoleContentUnion{
+								Value: "part1",
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrUserRoleContentUnion{
+								Value: "part2",
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
+				},
+			},
+			output: awsbedrock.ConverseInput{
+				InferenceConfig: &awsbedrock.InferenceConfiguration{},
+				System: []*awsbedrock.SystemContentBlock{
+					{
+						Text: "from-system",
+					},
+				},
+				Messages: []*awsbedrock.Message{
+					{
+						Role: openai.ChatMessageRoleUser,
+						Content: []*awsbedrock.ContentBlock{
+							{
+								Text: ptr.To("from-user"),
+							},
+						},
+					},
+					{
+						Role: openai.ChatMessageRoleUser,
+						Content: []*awsbedrock.ContentBlock{
+							{
+								Text: ptr.To("part1"),
+							},
+						},
+					},
+					{
+						Role: openai.ChatMessageRoleUser,
+						Content: []*awsbedrock.ContentBlock{
+							{
+								Text: ptr.To("part2"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "test content array",
+			input: openai.ChatCompletionRequest{
+				Stream: false,
+				Model:  "gpt-4o",
+				Messages: []openai.ChatCompletionMessageParamUnion{
+					{
+						Value: openai.ChatCompletionSystemMessageParam{
+							Content: openai.StringOrArray{
+								Value: []openai.ChatCompletionContentPartTextParam{
+									{Text: "from-system"},
+								},
+							},
+						}, Type: openai.ChatMessageRoleSystem,
+					},
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrUserRoleContentUnion{
+								Value: []openai.ChatCompletionContentPartUserUnionParam{
+									{TextContent: &openai.ChatCompletionContentPartTextParam{Text: "from-user"}},
+								},
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrUserRoleContentUnion{
+								Value: []openai.ChatCompletionContentPartUserUnionParam{
+									{TextContent: &openai.ChatCompletionContentPartTextParam{Text: "user1"}},
+								},
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrUserRoleContentUnion{
+								Value: []openai.ChatCompletionContentPartUserUnionParam{
+									{TextContent: &openai.ChatCompletionContentPartTextParam{Text: "user2"}},
+								},
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
+				},
+			},
+			output: awsbedrock.ConverseInput{
+				InferenceConfig: &awsbedrock.InferenceConfiguration{},
+				System: []*awsbedrock.SystemContentBlock{
+					{
+						Text: "from-system",
+					},
+				},
+				Messages: []*awsbedrock.Message{
+					{
+						Role: openai.ChatMessageRoleUser,
+						Content: []*awsbedrock.ContentBlock{
+							{
+								Text: ptr.To("from-user"),
+							},
+						},
+					},
+					{
+						Role: openai.ChatMessageRoleUser,
+						Content: []*awsbedrock.ContentBlock{
+							{
+								Text: ptr.To("user1"),
+							},
+						},
+					},
+					{
+						Role: openai.ChatMessageRoleUser,
+						Content: []*awsbedrock.ContentBlock{
+							{
+								Text: ptr.To("user2"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "test image",
+			input: openai.ChatCompletionRequest{
+				Stream: false,
+				Model:  "gpt-4o",
+				Messages: []openai.ChatCompletionMessageParamUnion{
+					{
+						Value: openai.ChatCompletionSystemMessageParam{
+							Content: openai.StringOrArray{
+								Value: []openai.ChatCompletionContentPartTextParam{
+									{Text: "from-system"},
+								},
+							},
+						}, Type: openai.ChatMessageRoleSystem,
+					},
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrUserRoleContentUnion{
+								Value: []openai.ChatCompletionContentPartUserUnionParam{
+									{ImageContent: &openai.ChatCompletionContentPartImageParam{
+										ImageURL: openai.ChatCompletionContentPartImageImageURLParam{
+											URL: "data:image/jpeg;base64,dGVzdAo=",
+										},
+									}},
+								},
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
+				},
+			},
+			output: awsbedrock.ConverseInput{
+				InferenceConfig: &awsbedrock.InferenceConfiguration{},
+				System: []*awsbedrock.SystemContentBlock{
+					{
+						Text: "from-system",
+					},
+				},
+				Messages: []*awsbedrock.Message{
+					{
+						Role: openai.ChatMessageRoleUser,
+						Content: []*awsbedrock.ContentBlock{
+							{
+								Image: &awsbedrock.ImageBlock{
+									Source: awsbedrock.ImageSource{
+										Bytes: []byte("dGVzdAo="),
+									},
+									Format: "jpeg",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "test parameters",
+			input: openai.ChatCompletionRequest{
+				Stream:      false,
+				Model:       "gpt-4o",
+				MaxTokens:   ptr.To(int64(10)),
+				TopP:        ptr.To(float64(1)),
+				Temperature: ptr.To(0.7),
+				Messages: []openai.ChatCompletionMessageParamUnion{
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrUserRoleContentUnion{
+								Value: "from-user",
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
+				},
+			},
+			output: awsbedrock.ConverseInput{
+				InferenceConfig: &awsbedrock.InferenceConfiguration{
+					MaxTokens:   ptr.To(int64(10)),
+					TopP:        ptr.To(float64(1)),
+					Temperature: ptr.To(0.7),
+				},
+				Messages: []*awsbedrock.Message{
+					{
+						Role: openai.ChatMessageRoleUser,
+						Content: []*awsbedrock.ContentBlock{
+							{
+								Text: ptr.To("from-user"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "test function calling",
+			input: openai.ChatCompletionRequest{
+				Stream:      false,
+				Model:       "gpt-4o",
+				MaxTokens:   ptr.To(int64(10)),
+				TopP:        ptr.To(float64(1)),
+				Temperature: ptr.To(0.7),
+				Messages: []openai.ChatCompletionMessageParamUnion{
+					{
+						Value: openai.ChatCompletionUserMessageParam{
+							Content: openai.StringOrUserRoleContentUnion{
+								Value: "from-user",
+							},
+						}, Type: openai.ChatMessageRoleUser,
+					},
+				},
+				Tools: []openai.Tool{
+					{
+						Type: "function",
+						Function: &openai.FunctionDefinition{
+							Name:        "get_current_weather",
+							Description: "Get the current weather in a given location",
+							Parameters: map[string]interface{}{
+								"type": "object",
+								"properties": map[string]interface{}{
+									"location": map[string]interface{}{
+										"type":        "string",
+										"description": "The city and state, e.g. San Francisco, CA",
+									},
+									"unit": map[string]interface{}{
+										"type": "string",
+										"enum": []string{"celsius", "fahrenheit"},
+									},
+								},
+								"required": []string{"location"},
+							},
+						},
+					},
+				},
+				ToolChoice: "auto",
+			},
+			output: awsbedrock.ConverseInput{
+				InferenceConfig: &awsbedrock.InferenceConfiguration{
+					MaxTokens:   ptr.To(int64(10)),
+					TopP:        ptr.To(float64(1)),
+					Temperature: ptr.To(0.7),
+				},
+				Messages: []*awsbedrock.Message{
+					{
+						Role: openai.ChatMessageRoleUser,
+						Content: []*awsbedrock.ContentBlock{
+							{
+								Text: ptr.To("from-user"),
+							},
+						},
+					},
+				},
+				ToolConfig: &awsbedrock.ToolConfiguration{
+					ToolChoice: &awsbedrock.ToolChoice{
+						Auto: &awsbedrock.AutoToolChoice{},
+					},
+					Tools: []*awsbedrock.Tool{
+						{
+							ToolSpec: &awsbedrock.ToolSpecification{
+								Name:        ptr.To("function"),
+								Description: ptr.To("Get the current weather in a given location"),
+								InputSchema: &awsbedrock.ToolInputSchema{
+									JSON: map[string]interface{}{
+										"type": "object",
+										"properties": map[string]interface{}{
+											"location": map[string]interface{}{
+												"type":        "string",
+												"description": "The city and state, e.g. San Francisco, CA",
+											},
+											"unit": map[string]interface{}{
+												"type": "string",
+												"enum": []any{"celsius", "fahrenheit"},
+											},
+										},
+										"required": []any{"location"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := &openAIToAWSBedrockTranslatorV1ChatCompletion{}
+			originalReq := tt.input
+			hm, bm, mode, err := o.RequestBody(router.RequestBody(&originalReq))
+			var expPath string
+			if tt.input.Stream {
+				expPath = "/model/gpt-4o/converse-stream"
+				require.True(t, o.stream)
+				require.NotNil(t, mode)
+				require.Equal(t, extprocv3http.ProcessingMode_STREAMED, mode.ResponseBodyMode)
+				require.Equal(t, extprocv3http.ProcessingMode_SEND, mode.ResponseHeaderMode)
+			} else {
+				expPath = "/model/gpt-4o/converse"
+				require.False(t, o.stream)
+				require.Nil(t, mode)
+			}
+			require.NoError(t, err)
+			require.NotNil(t, hm)
+			require.NotNil(t, hm.SetHeaders)
+			require.Len(t, hm.SetHeaders, 2)
+			require.Equal(t, ":path", hm.SetHeaders[0].Header.Key)
+			require.Equal(t, expPath, string(hm.SetHeaders[0].Header.RawValue))
+			require.Equal(t, "content-length", hm.SetHeaders[1].Header.Key)
+			newBody := bm.Mutation.(*extprocv3.BodyMutation_Body).Body
+			require.Equal(t, strconv.Itoa(len(newBody)), string(hm.SetHeaders[1].Header.RawValue))
 
-				hm, bm, mode, err := o.RequestBody(router.RequestBody(&originalReq))
-				var expPath string
-				if stream {
-					expPath = "/model/gpt-4o/converse-stream"
-					require.True(t, o.stream)
-					require.NotNil(t, mode)
-					require.Equal(t, extprocv3http.ProcessingMode_STREAMED, mode.ResponseBodyMode)
-					require.Equal(t, extprocv3http.ProcessingMode_SEND, mode.ResponseHeaderMode)
-				} else {
-					expPath = "/model/gpt-4o/converse"
-					require.False(t, o.stream)
-					require.Nil(t, mode)
-				}
-				require.NoError(t, err)
-				require.NotNil(t, hm)
-				require.NotNil(t, hm.SetHeaders)
-				require.Len(t, hm.SetHeaders, 2)
-				require.Equal(t, ":path", hm.SetHeaders[0].Header.Key)
-				require.Equal(t, expPath, string(hm.SetHeaders[0].Header.RawValue))
-				require.Equal(t, "content-length", hm.SetHeaders[1].Header.Key)
-				newBody := bm.Mutation.(*extprocv3.BodyMutation_Body).Body
-				require.Equal(t, strconv.Itoa(len(newBody)), string(hm.SetHeaders[1].Header.RawValue))
-
-				var awsReq awsbedrock.ConverseRequest
-				err = json.Unmarshal(newBody, &awsReq)
-				require.NoError(t, err)
-				require.NotNil(t, awsReq.Messages)
-				require.Len(t, awsReq.Messages, 4)
-				for _, msg := range awsReq.Messages {
-					t.Log(msg)
-				}
-				require.Equal(t, "assistant", awsReq.Messages[0].Role)
-				require.Equal(t, "from-system", awsReq.Messages[0].Content[0].Text)
-				require.Equal(t, "user", awsReq.Messages[1].Role)
-				require.Equal(t, "from-user", awsReq.Messages[1].Content[0].Text)
-				require.Equal(t, "user", awsReq.Messages[2].Role)
-				require.Equal(t, "part1", awsReq.Messages[2].Content[0].Text)
-				require.Equal(t, "user", awsReq.Messages[3].Role)
-				require.Equal(t, "part2", awsReq.Messages[3].Content[0].Text)
-			})
-		}
-	})
+			var awsReq awsbedrock.ConverseInput
+			err = json.Unmarshal(newBody, &awsReq)
+			require.NoError(t, err)
+			if !cmp.Equal(awsReq, tt.output) {
+				t.Errorf("ConvertOpenAIToBedrock(), diff(got, expected) = %s\n", cmp.Diff(awsReq, tt.output))
+			}
+		})
+	}
 }
 
 func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_ResponseHeaders(t *testing.T) {
@@ -120,7 +431,7 @@ func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_ResponseHeaders(t *testing
 	})
 }
 
-func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_ResponseBody(t *testing.T) {
+func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_Streaming_ResponseBody(t *testing.T) {
 	t.Run("streaming", func(t *testing.T) {
 		o := &openAIToAWSBedrockTranslatorV1ChatCompletion{stream: true}
 		buf, err := base64.StdEncoding.DecodeString(base64RealStreamingEvents)
@@ -161,33 +472,113 @@ data: {"object":"chat.completion.chunk","usage":{"completion_tokens":36,"prompt_
 data: [DONE]
 `, result)
 	})
-	t.Run("non-streaming", func(t *testing.T) {
-		t.Run("invalid body", func(t *testing.T) {
-			o := &openAIToAWSBedrockTranslatorV1ChatCompletion{}
-			_, _, _, err := o.ResponseBody(bytes.NewBuffer([]byte("invalid")), false)
-			require.Error(t, err)
-		})
-		t.Run("valid body", func(t *testing.T) {
-			originalAWSResp := awsbedrock.ConverseResponse{
-				Usage: awsbedrock.TokenUsage{
+}
+
+func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_ResponseBody(t *testing.T) {
+	t.Run("invalid body", func(t *testing.T) {
+		o := &openAIToAWSBedrockTranslatorV1ChatCompletion{}
+		_, _, _, err := o.ResponseBody(bytes.NewBuffer([]byte("invalid")), false)
+		require.Error(t, err)
+	})
+	tests := []struct {
+		name   string
+		input  awsbedrock.ConverseOutput
+		output openai.ChatCompletionResponse
+	}{
+		{
+			name: "basic_testing",
+			input: awsbedrock.ConverseOutput{
+				Usage: &awsbedrock.TokenUsage{
 					InputTokens:  10,
 					OutputTokens: 20,
 					TotalTokens:  30,
 				},
-				Output: awsbedrock.ConverseResponseOutput{
+				Output: &awsbedrock.ConverseOutput_{
 					Message: awsbedrock.Message{
 						Role: "assistant",
-						Content: []awsbedrock.ContentBlock{
-							{Text: "response"},
-							{Text: "from"},
-							{Text: "assistant"},
+						Content: []*awsbedrock.ContentBlock{
+							{Text: ptr.To("response")},
+							{Text: ptr.To("from")},
+							{Text: ptr.To("assistant")},
 						},
 					},
 				},
-			}
-			body, err := json.Marshal(originalAWSResp)
-			require.NoError(t, err)
+			},
+			output: openai.ChatCompletionResponse{
+				Object: "chat.completion",
+				Usage: openai.ChatCompletionResponseUsage{
+					TotalTokens:      30,
+					PromptTokens:     10,
+					CompletionTokens: 20,
+				},
+				Choices: []openai.ChatCompletionResponseChoice{
+					{
+						Index: 0,
+						Message: openai.ChatCompletionResponseChoiceMessage{
+							Content: ptr.To("response"),
+							Role:    "assistant",
+						},
+					},
+					{
+						Index: 1,
+						Message: openai.ChatCompletionResponseChoiceMessage{
+							Content: ptr.To("from"),
+							Role:    "assistant",
+						},
+					},
+					{
+						Index: 2,
+						Message: openai.ChatCompletionResponseChoiceMessage{
+							Content: ptr.To("assistant"),
+							Role:    "assistant",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "test stop reason",
+			input: awsbedrock.ConverseOutput{
+				Usage: &awsbedrock.TokenUsage{
+					InputTokens:  10,
+					OutputTokens: 20,
+					TotalTokens:  30,
+				},
+				StopReason: ptr.To("stop_sequence"),
+				Output: &awsbedrock.ConverseOutput_{
+					Message: awsbedrock.Message{
+						Role: awsbedrock.ConversationRoleAssistant,
+						Content: []*awsbedrock.ContentBlock{
+							{Text: ptr.To("response")},
+						},
+					},
+				},
+			},
+			output: openai.ChatCompletionResponse{
+				Object: "chat.completion",
+				Usage: openai.ChatCompletionResponseUsage{
+					TotalTokens:      30,
+					PromptTokens:     10,
+					CompletionTokens: 20,
+				},
+				Choices: []openai.ChatCompletionResponseChoice{
+					{
+						Index:        0,
+						FinishReason: openai.ChatCompletionChoicesFinishReasonStop,
+						Message: openai.ChatCompletionResponseChoiceMessage{
+							Content: ptr.To("response"),
+							Role:    awsbedrock.ConversationRoleAssistant,
+						},
+					},
+				},
+			},
+		},
+	}
 
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, err := json.Marshal(tt.input)
+			require.NoError(t, err)
 			o := &openAIToAWSBedrockTranslatorV1ChatCompletion{}
 			hm, bm, usedToken, err := o.ResponseBody(bytes.NewBuffer(body), false)
 			require.NoError(t, err)
@@ -205,20 +596,12 @@ data: [DONE]
 			var openAIResp openai.ChatCompletionResponse
 			err = json.Unmarshal(newBody, &openAIResp)
 			require.NoError(t, err)
-			require.NotNil(t, openAIResp.Usage)
 			require.Equal(t, uint32(30), usedToken)
-			require.Equal(t, 30, openAIResp.Usage.TotalTokens)
-			require.Equal(t, 10, openAIResp.Usage.PromptTokens)
-			require.Equal(t, 20, openAIResp.Usage.CompletionTokens)
-
-			require.NotNil(t, openAIResp.Choices)
-			require.Len(t, openAIResp.Choices, 3)
-
-			require.Equal(t, "response", *openAIResp.Choices[0].Message.Content)
-			require.Equal(t, "from", *openAIResp.Choices[1].Message.Content)
-			require.Equal(t, "assistant", *openAIResp.Choices[2].Message.Content)
+			if !cmp.Equal(openAIResp, tt.output) {
+				t.Errorf("ConvertOpenAIToBedrock(), diff(got, expected) = %s\n", cmp.Diff(openAIResp, tt.output))
+			}
 		})
-	})
+	}
 }
 
 const base64RealStreamingEvents = "AAAAnwAAAFKzEV9wCzpldmVudC10eXBlBwAMbWVzc2FnZVN0YXJ0DTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsicCI6ImFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6QUJDREVGR0giLCJyb2xlIjoiYXNzaXN0YW50In0i9wVBAAAAxQAAAFex2HyVCzpldmVudC10eXBlBwARY29udGVudEJsb2NrRGVsdGENOmNvbnRlbnQtdHlwZQcAEGFwcGxpY2F0aW9uL2pzb24NOm1lc3NhZ2UtdHlwZQcABWV2ZW50eyJjb250ZW50QmxvY2tJbmRleCI6MCwiZGVsdGEiOnsidGV4dCI6IkRvbiJ9LCJwIjoiYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXpBQkNERUZHSElKS0xNTk8ifb/whawAAADAAAAAV3k48+ULOmV2ZW50LXR5cGUHABFjb250ZW50QmxvY2tEZWx0YQ06Y29udGVudC10eXBlBwAQYXBwbGljYXRpb24vanNvbg06bWVzc2FnZS10eXBlBwAFZXZlbnR7ImNvbnRlbnRCbG9ja0luZGV4IjowLCJkZWx0YSI6eyJ0ZXh0IjoiJ3Qgd29ycnksIEknbSBoZXJlIHRvIGhlbHAuIEl0In0sInAiOiJhYmNkZWZnaGkifenahv0AAADgAAAAV7j53OELOmV2ZW50LXR5cGUHABFjb250ZW50QmxvY2tEZWx0YQ06Y29udGVudC10eXBlBwAQYXBwbGljYXRpb24vanNvbg06bWVzc2FnZS10eXBlBwAFZXZlbnR7ImNvbnRlbnRCbG9ja0luZGV4IjowLCJkZWx0YSI6eyJ0ZXh0IjoiIHNlZW1zIGxpa2UgeW91J3JlIHRlc3RpbmcgbXkgYWJpbGl0eSB0byByZXNwb25kIGFwcHJvcHJpYXRlbHkifSwicCI6ImFiY2RlZmdoaSJ9dNZCqAAAAM8AAABX+2hkNAs6ZXZlbnQtdHlwZQcAEWNvbnRlbnRCbG9ja0RlbHRhDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsiY29udGVudEJsb2NrSW5kZXgiOjAsImRlbHRhIjp7InRleHQiOiIuIElmIHlvdSdkIGxpa2UgdG8gY29udGludWUgdGhlIHRlc3QsIn0sInAiOiJhYmNkZWZnaGlqa2xtbm9wcSJ9xQJqAgAAALUAAABXSAqcWgs6ZXZlbnQtdHlwZQcAEWNvbnRlbnRCbG9ja0RlbHRhDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsiY29udGVudEJsb2NrSW5kZXgiOjAsImRlbHRhIjp7InRleHQiOiIgSSdtIHJlYWR5LiJ9LCJwIjoiYWJjZGVmZ2hpamtsbW5vcHEifTOb7esAAAC5AAAAVvr9Qc0LOmV2ZW50LXR5cGUHABBjb250ZW50QmxvY2tTdG9wDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsiY29udGVudEJsb2NrSW5kZXgiOjAsInAiOiJhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ekFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaMCJ9iABE1AAAAI0AAABRMDjKKAs6ZXZlbnQtdHlwZQcAC21lc3NhZ2VTdG9wDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsicCI6ImFiY2RlZmdoaWprbCIsInN0b3BSZWFzb24iOiJlbmRfdHVybiJ9LttU3QAAAPoAAABO9sL7Ags6ZXZlbnQtdHlwZQcACG1ldGFkYXRhDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsibWV0cmljcyI6eyJsYXRlbmN5TXMiOjQ1Mn0sInAiOiJhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ekFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaMDEyMzQ1IiwidXNhZ2UiOnsiaW5wdXRUb2tlbnMiOjQxLCJvdXRwdXRUb2tlbnMiOjM2LCJ0b3RhbFRva2VucyI6Nzd9fX96gYI="
