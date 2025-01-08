@@ -167,6 +167,12 @@ type LLMBackendSpec struct {
 	//
 	// +kubebuilder:validation:Required
 	BackendRef egv1a1.BackendRef `json:"backendRef"`
+
+	// BackendSecurityPolicyRef is the name of the BackendSecurityPolicy resources this backend
+	// is being attached to.
+	//
+	// +optional
+	BackendSecurityPolicyRef *gwapiv1.LocalObjectReference `json:"backendSecurityPolicyRef,omitempty"`
 }
 
 // LLMAPISchema defines the API schema of either LLMRoute (the input) or LLMBackend (the output).
@@ -205,3 +211,113 @@ const (
 	// This can be used to describe the routing behavior in HTTPRoute referenced by LLMRoute.
 	LLMModelHeaderKey = "x-envoy-ai-gateway-llm-model"
 )
+
+// BackendSecurityPolicyType specifies the type of auth mechanism used to access a backend.
+type BackendSecurityPolicyType string
+
+const (
+	BackendSecurityPolicyTypeAPIKey         BackendSecurityPolicyType = "APIKey"
+	BackendSecurityPolicyTypeAWSCredentials BackendSecurityPolicyType = "AWSCredentials"
+)
+
+// +kubebuilder:object:root=true
+
+// BackendSecurityPolicy specifies configuration for authentication and authorization rules on the traffic
+// exiting the gateway to the backend.
+type BackendSecurityPolicy struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              BackendSecurityPolicySpec `json:"spec,omitempty"`
+}
+
+// BackendSecurityPolicySpec specifies authentication rules on access the provider from the Gateway.
+// Only one mechanism to access a backend(s) can be specified.
+//
+// Only one type of BackendSecurityPolicy can be defined.
+// +kubebuilder:validation:MaxProperties=2
+type BackendSecurityPolicySpec struct {
+	// Type specifies the auth mechanism used to access the provider. Currently, only "APIKey", AND "AWSCredentials" are supported.
+	//
+	// +kubebuilder:validation:Enum=APIKey;AWSCredentials
+	Type BackendSecurityPolicyType `json:"type"`
+
+	// APIKey is a mechanism to access a backend(s). The API key will be injected into the Authorization header.
+	//
+	// +optional
+	APIKey *BackendSecurityPolicyAPIKey `json:"apiKey,omitempty"`
+
+	// AWSCredentials is a mechanism to access a backend(s). AWS specific logic will be applied.
+	//
+	// +optional
+	AWSCredentials *BackendSecurityPolicyAWSCredentials `json:"awsCredentials,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+
+// BackendSecurityPolicyList contains a list of BackendSecurityPolicy
+type BackendSecurityPolicyList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []BackendSecurityPolicy `json:"items"`
+}
+
+// BackendSecurityPolicyAPIKey specifies the API key.
+type BackendSecurityPolicyAPIKey struct {
+	// SecretRef is the reference to the secret containing the API key.
+	// ai-gateway must be given the permission to read this secret.
+	// The key of the secret should be "apiKey".
+	SecretRef *gwapiv1.SecretObjectReference `json:"secretRef"`
+}
+
+// BackendSecurityPolicyAWSCredentials contains the supported authentication mechanisms to access aws
+type BackendSecurityPolicyAWSCredentials struct {
+	// Region specifies the AWS region associated with the policy.
+	//
+	// +kubebuilder:validation:MinLength=1
+	Region string `json:"region"`
+
+	// CredentialsFile specifies the credentials file to use for the AWS provider.
+	//
+	// +optional
+	CredentialsFile *AWSCredentialsFile `json:"credentialsFile,omitempty"`
+
+	// OIDCExchangeToken specifies the oidc configurations used to obtain an oidc token. The oidc token will be
+	// used to obtain temporary credentials to access AWS.
+	//
+	// +optional
+	OIDCExchangeToken *AWSOIDCExchangeToken `json:"oidcExchangeToken,omitempty"`
+}
+
+// AWSCredentialsFile specifies the credentials file to use for the AWS provider.
+// Envoy reads the secret file, and the profile to use is specified by the Profile field.
+type AWSCredentialsFile struct {
+	// SecretRef is the reference to the credential file
+	SecretRef *gwapiv1.SecretObjectReference `json:"secretRef"`
+
+	// Profile is the profile to use in the credentials file.
+	//
+	// +kubebuilder:default=default
+	Profile string `json:"profile,omitempty"`
+}
+
+// AWSOIDCExchangeToken specifies credentials to obtain oidc token from a sso server.
+// For AWS, the controller will query STS to obtain AWS AccessKeyId, SecretAccessKey, and SessionToken,
+// and store them in a temporary credentials file.
+type AWSOIDCExchangeToken struct {
+	// OIDC is used to obtain oidc tokens via an SSO server which will be used to exchange for temporary AWS credentials.
+	OIDC egv1a1.OIDC `json:"oidc"`
+
+	// GrantType is the method application gets access token.
+	//
+	// +optional
+	GrantType string `json:"grantType,omitempty"`
+
+	// Aud defines the audience that this ID Token is intended for.
+	//
+	// +optional
+	Aud string `json:"aud,omitempty"`
+
+	// AwsRoleArn is the AWS IAM Role with the permission to use specific resources in AWS account
+	// which maps to the temporary AWS security credentials exchanged using the authentication token issued by OIDC provider.
+	AwsRoleArn string `json:"awsRoleArn"`
+}
