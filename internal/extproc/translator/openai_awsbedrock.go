@@ -88,7 +88,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body router.R
 	}
 	// Convert ToolConfiguration.
 	if len(openAIReq.Tools) > 0 {
-		err = o.OpenAIToolsToBedrockToolConfiguration(openAIReq, &bedrockReq)
+		err = o.openAIToolsToBedrockToolConfiguration(openAIReq, &bedrockReq)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -104,8 +104,8 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body router.R
 	return headerMutation, &extprocv3.BodyMutation{Mutation: mut}, override, nil
 }
 
-// OpenAIToolsToBedrockToolConfiguration converts openai ChatCompletion tools to aws bedrock tool configurations
-func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) OpenAIToolsToBedrockToolConfiguration(openAIReq *openai.ChatCompletionRequest,
+// openAIToolsToBedrockToolConfiguration converts openai ChatCompletion tools to aws bedrock tool configurations
+func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIToolsToBedrockToolConfiguration(openAIReq *openai.ChatCompletionRequest,
 	bedrockReq *awsbedrock.ConverseInput,
 ) error {
 	bedrockReq.ToolConfig = &awsbedrock.ToolConfiguration{}
