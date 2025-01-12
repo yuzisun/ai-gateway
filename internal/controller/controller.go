@@ -36,6 +36,13 @@ func MustInitializeScheme(scheme *runtime.Scheme) {
 	utilruntime.Must(gwapiv1b1.Install(scheme))
 }
 
+// Options defines the program configurable options that may be passed on the command line.
+type Options struct {
+	LogLevel             string
+	ExtProcImage         string
+	EnableLeaderElection bool
+}
+
 func newClients(config *rest.Config) (kubeClient client.Client, kube kubernetes.Interface, err error) {
 	// TODO: cache options, especially HTTPRoutes managed by the AI Gateway.
 	kubeClient, err = client.New(config, client.Options{Scheme: scheme})
@@ -54,10 +61,10 @@ func newClients(config *rest.Config) (kubeClient client.Client, kube kubernetes.
 // This blocks until the manager is stopped.
 //
 // Note: this is tested with envtest, hence the test exists outside of this package. See /tests/controller_test.go.
-func StartControllers(ctx context.Context, config *rest.Config, logger logr.Logger, logLevel string, extProcImage string, leaderElection bool) error {
+func StartControllers(config *rest.Config, logger logr.Logger, options Options) error {
 	opt := ctrl.Options{
 		Scheme:           scheme,
-		LeaderElection:   leaderElection,
+		LeaderElection:   options.EnableLeaderElection,
 		LeaderElectionID: "envoy-ai-gateway-controller",
 	}
 
@@ -72,7 +79,7 @@ func StartControllers(ctx context.Context, config *rest.Config, logger logr.Logg
 	}
 
 	sinkChan := make(chan ConfigSinkEvent, 100)
-	routeC := NewLLMRouteController(clientForRouteC, kubeForRouteC, logger, logLevel, extProcImage, sinkChan)
+	routeC := NewLLMRouteController(clientForRouteC, kubeForRouteC, logger, options, sinkChan)
 	if err = ctrl.NewControllerManagedBy(mgr).
 		For(&aigv1a1.LLMRoute{}).
 		Complete(routeC); err != nil {
@@ -98,20 +105,15 @@ func StartControllers(ctx context.Context, config *rest.Config, logger logr.Logg
 
 	sink := newConfigSink(clientForConfigSink, kubeForConfigSink, logger, sinkChan)
 
-	if leaderElection {
-		logger.Info("Waiting to become the leader")
-		<-mgr.Elected()
-		logger.Info("Became the leader")
-	}
-
 	// Before starting the manager, initialize the config sink to sync all LLMBackend and LLMRoute objects in the cluster.
 	logger.Info("Initializing config sink")
+	ctx := context.Background()
 	if err = sink.init(ctx); err != nil {
 		return fmt.Errorf("failed to initialize config sink: %w", err)
 	}
 
 	logger.Info("Starting controller manager")
-	if err = mgr.Start(ctx); err != nil { // This blocks until the manager is stopped.
+	if err = mgr.Start(ctrl.SetupSignalHandler()); err != nil { // This blocks until the manager is stopped.
 		return fmt.Errorf("failed to start controller manager: %w", err)
 	}
 	return nil

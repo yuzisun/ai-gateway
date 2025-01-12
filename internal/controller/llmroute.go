@@ -13,6 +13,7 @@ import (
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
@@ -40,14 +41,14 @@ type llmRouteController struct {
 // NewLLMRouteController creates a new reconcile.TypedReconciler[reconcile.Request] for the LLMRoute resource.
 func NewLLMRouteController(
 	client client.Client, kube kubernetes.Interface, logger logr.Logger,
-	logLevel, extProcImage string, ch chan ConfigSinkEvent,
+	options Options, ch chan ConfigSinkEvent,
 ) reconcile.TypedReconciler[reconcile.Request] {
 	return &llmRouteController{
 		client:       client,
 		kube:         kube,
 		logger:       logger,
-		logLevel:     logLevel,
-		extProcImage: extProcImage,
+		logLevel:     options.LogLevel,
+		extProcImage: options.ExtProcImage,
 		eventChan:    ch,
 	}
 }
@@ -58,7 +59,8 @@ func NewLLMRouteController(
 // The actual HTTPRoute and the extproc configuration will be created in the config sink since we need
 // not only the LLMRoute but also the LLMBackend and other resources to create the full configuration.
 func (c *llmRouteController) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	c.logger.Info("Reconciling LLMRoute")
+	logger := log.FromContext(ctx)
+	logger.Info("Reconciling LLMRoute", "namespace", req.Namespace, "name", req.Name)
 
 	var llmRoute aigv1a1.LLMRoute
 	if err := c.client.Get(ctx, req.NamespacedName, &llmRoute); err != nil {
@@ -82,12 +84,15 @@ func (c *llmRouteController) Reconcile(ctx context.Context, req reconcile.Reques
 	ownerRef := ownerReferenceForLLMRoute(&llmRoute)
 
 	if err := c.ensuresExtProcConfigMapExists(ctx, &llmRoute, ownerRef); err != nil {
+		logger.Error(err, "Failed to reconcile extProc config map")
 		return ctrl.Result{}, err
 	}
 	if err := c.reconcileExtProcDeployment(ctx, &llmRoute, ownerRef); err != nil {
+		logger.Error(err, "Failed to reconcile extProc deployment")
 		return ctrl.Result{}, err
 	}
 	if err := c.reconcileExtProcExtensionPolicy(ctx, &llmRoute, ownerRef); err != nil {
+		logger.Error(err, "Failed to reconcile extension policy")
 		return ctrl.Result{}, err
 	}
 	// Send a copy to the config sink for a full reconciliation on HTTPRoute as well as the extproc config.
