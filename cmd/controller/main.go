@@ -30,13 +30,14 @@ func GetOptions() controller.Options {
 		Development: true,
 	}
 	zapOpts.BindFlags(flag.CommandLine)
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
+	opts.ZapOptions = zapOpts
 	flag.Parse()
 	return opts
 }
 
 func main() {
 	options := GetOptions()
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&options.ZapOptions)))
 	k8sConfig, err := ctrl.GetConfig()
 	if err != nil {
 		setupLog.Error(err, "failed to get k8s config")

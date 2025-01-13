@@ -14,6 +14,7 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwapiv1b1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 
@@ -40,6 +41,7 @@ func MustInitializeScheme(scheme *runtime.Scheme) {
 type Options struct {
 	ExtProcImage         string
 	EnableLeaderElection bool
+	ZapOptions           zap.Options
 }
 
 func newClients(config *rest.Config) (kubeClient client.Client, kube kubernetes.Interface, err error) {
