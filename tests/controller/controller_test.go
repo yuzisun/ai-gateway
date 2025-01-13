@@ -48,7 +48,7 @@ func TestStartControllers(t *testing.T) {
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(2*time.Minute))
 	defer cancel()
 	go func() {
-		err := controller.StartControllers(cfg, l, opts)
+		err := controller.StartControllers(ctx, cfg, l, opts)
 		require.NoError(t, err)
 	}()
 

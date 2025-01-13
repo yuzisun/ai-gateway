@@ -62,7 +62,7 @@ func newClients(config *rest.Config) (kubeClient client.Client, kube kubernetes.
 // This blocks until the manager is stopped.
 //
 // Note: this is tested with envtest, hence the test exists outside of this package. See /tests/controller_test.go.
-func StartControllers(config *rest.Config, logger logr.Logger, options Options) error {
+func StartControllers(ctx context.Context, config *rest.Config, logger logr.Logger, options Options) error {
 	opt := ctrl.Options{
 		Scheme:           scheme,
 		LeaderElection:   options.EnableLeaderElection,
@@ -108,13 +108,12 @@ func StartControllers(config *rest.Config, logger logr.Logger, options Options) 
 
 	// Before starting the manager, initialize the config sink to sync all LLMBackend and LLMRoute objects in the cluster.
 	logger.Info("Initializing config sink")
-	ctx := context.Background()
 	if err = sink.init(ctx); err != nil {
 		return fmt.Errorf("failed to initialize config sink: %w", err)
 	}
 
 	logger.Info("Starting controller manager")
-	if err = mgr.Start(ctrl.SetupSignalHandler()); err != nil { // This blocks until the manager is stopped.
+	if err = mgr.Start(ctx); err != nil { // This blocks until the manager is stopped.
 		return fmt.Errorf("failed to start controller manager: %w", err)
 	}
 	return nil

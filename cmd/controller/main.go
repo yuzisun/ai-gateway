@@ -20,7 +20,7 @@ func DefaultOptions() controller.Options {
 }
 
 // GetOptions parses the program flags and returns them as Options.
-func GetOptions() controller.Options {
+func getOptions() controller.Options {
 	opts := DefaultOptions()
 	flag.StringVar(&opts.ExtProcImage, "extprocImage", opts.ExtProcImage, "The image for the external processor")
 	flag.BoolVar(&opts.EnableLeaderElection, "leader-elect", opts.EnableLeaderElection,
@@ -36,7 +36,7 @@ func GetOptions() controller.Options {
 }
 
 func main() {
-	options := GetOptions()
+	options := getOptions()
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&options.ZapOptions)))
 	k8sConfig, err := ctrl.GetConfig()
 	if err != nil {
@@ -45,7 +45,7 @@ func main() {
 
 	// TODO: starts the extension server?
 
-	if err := controller.StartControllers(k8sConfig, setupLog, options); err != nil {
+	if err := controller.StartControllers(ctrl.SetupSignalHandler(), k8sConfig, setupLog, options); err != nil {
 		setupLog.Error(err, "failed to start controller")
 	}
 }
