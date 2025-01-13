@@ -384,6 +384,35 @@ func Test_updateExtProcConfigMap(t *testing.T) {
 
 	eventChan := make(chan ConfigSinkEvent)
 	s := newConfigSink(fakeClient, kube, logr.Discard(), eventChan)
+	s.backends = map[string]*aigv1a1.LLMBackend{
+		"apple.ns": {
+			ObjectMeta: metav1.ObjectMeta{Name: "apple", Namespace: "ns"},
+			Spec: aigv1a1.LLMBackendSpec{
+				APISchema: aigv1a1.LLMAPISchema{
+					Schema: aigv1a1.APISchemaAWSBedrock,
+				},
+				BackendRef: egv1a1.BackendRef{
+					BackendObjectReference: gwapiv1.BackendObjectReference{Name: "some-backend1", Namespace: ptr.To[gwapiv1.Namespace]("ns")},
+				},
+			},
+		},
+		"cat.ns": {
+			ObjectMeta: metav1.ObjectMeta{Name: "cat", Namespace: "ns"},
+			Spec: aigv1a1.LLMBackendSpec{
+				BackendRef: egv1a1.BackendRef{
+					BackendObjectReference: gwapiv1.BackendObjectReference{Name: "some-backend2", Namespace: ptr.To[gwapiv1.Namespace]("ns")},
+				},
+			},
+		},
+		"pineapple.ns": {
+			ObjectMeta: metav1.ObjectMeta{Name: "pineapple", Namespace: "ns"},
+			Spec: aigv1a1.LLMBackendSpec{
+				BackendRef: egv1a1.BackendRef{
+					BackendObjectReference: gwapiv1.BackendObjectReference{Name: "some-backend3", Namespace: ptr.To[gwapiv1.Namespace]("ns")},
+				},
+			},
+		},
+	}
 	require.NotNil(t, s)
 
 	for _, tc := range []struct {
@@ -422,8 +451,10 @@ func Test_updateExtProcConfigMap(t *testing.T) {
 				SelectedBackendHeaderKey: selectedBackendHeaderKey,
 				Rules: []extprocconfig.RouteRule{
 					{
-						Backends: []extprocconfig.Backend{{Name: "apple.ns", Weight: 1}, {Name: "pineapple.ns", Weight: 2}},
-						Headers:  []extprocconfig.HeaderMatch{{Name: aigv1a1.LLMModelHeaderKey, Value: "some-ai"}},
+						Backends: []extprocconfig.Backend{
+							{Name: "apple.ns", Weight: 1, OutputSchema: extprocconfig.VersionedAPISchema{Schema: extprocconfig.APISchemaAWSBedrock}}, {Name: "pineapple.ns", Weight: 2},
+						},
+						Headers: []extprocconfig.HeaderMatch{{Name: aigv1a1.LLMModelHeaderKey, Value: "some-ai"}},
 					},
 					{
 						Backends: []extprocconfig.Backend{{Name: "cat.ns", Weight: 1}},

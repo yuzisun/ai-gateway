@@ -145,7 +145,7 @@ func (c *configSink) syncLLMRoute(llmRoute *aigv1a1.LLMRoute) {
 	err := c.client.Get(context.Background(), client.ObjectKey{Name: llmRoute.Name, Namespace: llmRoute.Namespace}, &httpRoute)
 	existingRoute := err == nil
 	if client.IgnoreNotFound(err) != nil {
-		c.logger.Error(err, "failed to get HTTPRoute", "llmRoute", llmRoute)
+		c.logger.Error(err, "failed to get HTTPRoute", "namespace", llmRoute.Namespace, "name", llmRoute.Name)
 		return
 	}
 	if !existingRoute {
@@ -162,25 +162,25 @@ func (c *configSink) syncLLMRoute(llmRoute *aigv1a1.LLMRoute) {
 
 	// Update the HTTPRoute with the new LLMRoute.
 	if err := c.newHTTPRoute(&httpRoute, llmRoute); err != nil {
-		c.logger.Error(err, "failed to update HTTPRoute with LLMRoute", "llmRoute", llmRoute)
+		c.logger.Error(err, "failed to update HTTPRoute with LLMRoute", "namespace", llmRoute.Namespace, "name", llmRoute.Name)
 		return
 	}
 
 	if existingRoute {
 		if err := c.client.Update(context.Background(), &httpRoute); err != nil {
-			c.logger.Error(err, "failed to update HTTPRoute", "httpRoute", httpRoute)
+			c.logger.Error(err, "failed to update HTTPRoute", "namespace", httpRoute.Namespace, "name", httpRoute.Name)
 			return
 		}
 	} else {
 		if err := c.client.Create(context.Background(), &httpRoute); err != nil {
-			c.logger.Error(err, "failed to create HTTPRoute", "httpRoute", httpRoute)
+			c.logger.Error(err, "failed to create HTTPRoute", "namespace", httpRoute.Namespace, "name", httpRoute.Name)
 			return
 		}
 	}
 
 	// Update the extproc configmap.
 	if err := c.updateExtProcConfigMap(llmRoute); err != nil {
-		c.logger.Error(err, "failed to update extproc configmap", "llmRoute", llmRoute)
+		c.logger.Error(err, "failed to update extproc configmap", "namespace", llmRoute.Namespace, "name", llmRoute.Name)
 		return
 	}
 
@@ -237,6 +237,14 @@ func (c *configSink) updateExtProcConfigMap(llmRoute *aigv1a1.LLMRoute) error {
 			key := fmt.Sprintf("%s.%s", backend.Name, llmRoute.Namespace)
 			ec.Rules[i].Backends[j].Name = key
 			ec.Rules[i].Backends[j].Weight = backend.Weight
+			backendObj, ok := c.backends[key]
+			if !ok {
+				err = fmt.Errorf("backend %s not found", key)
+				return err
+			} else {
+				ec.Rules[i].Backends[j].OutputSchema.Schema = extprocconfig.APISchema(backendObj.Spec.APISchema.Schema)
+				ec.Rules[i].Backends[j].OutputSchema.Version = backendObj.Spec.APISchema.Version
+			}
 		}
 		ec.Rules[i].Headers = make([]extprocconfig.HeaderMatch, len(rule.Matches))
 		for j, match := range rule.Matches {
