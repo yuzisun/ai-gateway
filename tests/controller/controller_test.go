@@ -39,14 +39,16 @@ func extProcName(llmRouteName string) string {
 // TestStartControllers tests the [controller.StartControllers] function.
 func TestStartControllers(t *testing.T) {
 	c, cfg, k := tests.NewEnvTest(t)
-
+	opts := controller.Options{
+		ExtProcImage:         "envoyproxy/ai-gateway-extproc:foo",
+		EnableLeaderElection: false,
+	}
 	l := logr.FromSlogHandler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{}))
 	klog.SetLogger(l)
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(2*time.Minute))
 	defer cancel()
 	go func() {
-		err := controller.StartControllers(ctx, cfg, l, "debug",
-			"envoyproxy/ai-gateway-extproc:foo", false)
+		err := controller.StartControllers(ctx, cfg, l, opts)
 		require.NoError(t, err)
 	}()
 
@@ -197,9 +199,12 @@ func TestStartControllers(t *testing.T) {
 
 func TestLLMRouteController(t *testing.T) {
 	c, cfg, k := tests.NewEnvTest(t)
-
+	opts := controller.Options{
+		ExtProcImage:         "envoyproxy/ai-gateway-extproc:foo",
+		EnableLeaderElection: false,
+	}
 	ch := make(chan controller.ConfigSinkEvent)
-	rc := controller.NewLLMRouteController(c, k, logr.Discard(), "info", "foo", ch)
+	rc := controller.NewLLMRouteController(c, k, logr.Discard(), opts, ch)
 
 	opt := ctrl.Options{Scheme: c.Scheme(), LeaderElection: false, Controller: config.Controller{SkipNameValidation: ptr.To(true)}}
 	mgr, err := ctrl.NewManager(cfg, opt)
