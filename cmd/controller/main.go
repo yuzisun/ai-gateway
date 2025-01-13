@@ -14,7 +14,6 @@ var setupLog = ctrl.Log.WithName("setup")
 // DefaultOptions returns the default values for the program options.
 func DefaultOptions() controller.Options {
 	return controller.Options{
-		LogLevel:             "info",
 		ExtProcImage:         "ghcr.io/envoyproxy/ai-gateway-extproc:latest",
 		EnableLeaderElection: false,
 	}
@@ -23,7 +22,6 @@ func DefaultOptions() controller.Options {
 // GetOptions parses the program flags and returns them as Options.
 func GetOptions() controller.Options {
 	opts := DefaultOptions()
-	flag.StringVar(&opts.LogLevel, "logLevel", opts.LogLevel, "The log level")
 	flag.StringVar(&opts.ExtProcImage, "extprocImage", opts.ExtProcImage, "The image for the external processor")
 	flag.BoolVar(&opts.EnableLeaderElection, "leader-elect", opts.EnableLeaderElection,
 		"Enable leader election for controller manager. "+

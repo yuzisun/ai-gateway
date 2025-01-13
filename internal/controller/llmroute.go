@@ -47,7 +47,6 @@ func NewLLMRouteController(
 		client:       client,
 		kube:         kube,
 		logger:       logger,
-		logLevel:     options.LogLevel,
 		extProcImage: options.ExtProcImage,
 		eventChan:    ch,
 	}

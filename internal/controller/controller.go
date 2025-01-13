@@ -38,7 +38,6 @@ func MustInitializeScheme(scheme *runtime.Scheme) {
 
 // Options defines the program configurable options that may be passed on the command line.
 type Options struct {
-	LogLevel             string
 	ExtProcImage         string
 	EnableLeaderElection bool
 }
