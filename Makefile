@@ -16,6 +16,7 @@ OUTPUT_DIR ?= out
 OCI_REGISTRY ?= ghcr.io/envoyproxy/ai-gateway
 TAG ?= latest
 ENABLE_MULTI_PLATFORMS ?= false
+HELM_CHART_VERSION ?= v0.0.0-latest
 
 # This runs the linter, formatter, and tidy on the codebase.
 .PHONY: lint
@@ -61,6 +62,7 @@ precommit: tidy codespell apigen format lint
 .PHONY: check
 check: editorconfig-checker
 	@$(MAKE) precommit
+	@$(MAKE) helm-package --version ${HELM_CHART_VERSION}
 	@echo "running editorconfig-checker"
 	@$(EDITORCONFIG_CHECKER)
 	@if [ ! -z "`git status -s`" ]; then \
@@ -173,3 +175,30 @@ docker-build.%:
 .PHONE: docker-build
 docker-build:
 	@$(foreach COMMAND_NAME,$(COMMANDS),$(MAKE) docker-build.$(COMMAND_NAME);)
+
+HELM_DIR := ./manifests/charts/ai-gateway-helm
+
+# This lints the helm chart, ensuring that it is for packaging.
+#
+# This uses the locally installed helm binary (TODO make helm installed via Makefile.tools.mk).
+.PHONY: helm-lint
+helm-lint:
+	@echo "helm-lint => .${HELM_DIR}"
+	@helm lint ${HELM_DIR}
+
+# This packages the helm chart into a tgz file, ready for deployment as well as for pushing to the OCI registry.
+# This must pass before `helm-push` can be run as well as on any commit.
+#
+# This uses the locally installed helm binary (TODO make helm installed via Makefile.tools.mk).
+.PHONY: helm-package
+helm-package: helm-lint
+	@echo "helm-package => ${HELM_DIR}"
+	@helm package ${HELM_DIR} --version ${HELM_CHART_VERSION} -d ${OUTPUT_DIR}
+
+# This pushes the helm chart to the OCI registry, requiring the access to the registry endpoint.
+#
+# This uses the locally installed helm binary (TODO make helm installed via Makefile.tools.mk).
+.PHONY: helm-push
+helm-push: helm-package
+	@echo "helm-push => .${HELM_DIR}"
+	@helm push ${OUTPUT_DIR}/ai-gateway-helm-${HELM_CHART_VERSION}.tgz oci://${OCI_REGISTRY}
