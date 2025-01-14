@@ -18,6 +18,23 @@ TAG ?= latest
 ENABLE_MULTI_PLATFORMS ?= false
 HELM_CHART_VERSION ?= v0.0.0-latest
 
+# This will print out the help message for contributing to the project.
+.PHONY: help
+help:
+	@echo "Usage: make <target>"
+	@echo ""
+	@echo "All core targets needed for contributing:"
+	@echo "  precommit       	 Run all necessary steps to prepare for a commit."
+	@echo "  test            	 Run the unit tests for the codebase."
+	@echo "  test-cel        	 Run the integration tests of CEL validation rules in API definitions with envtest."
+	@echo "                  	 This will be needed when changing API definitions."
+	@echo "  test-extproc    	 Run the integration tests for extproc without controller or k8s at all."
+	@echo "                  	 Note that this requires some credentials."
+	@echo "  test-controller	 Run the integration tests for the controller with envtest."
+	@echo ""
+	@echo "For example, 'make precommit test' should be enough for initial iterations, and later 'make test-cel' etc."
+	@echo ""
+
 # This runs the linter, formatter, and tidy on the codebase.
 .PHONY: lint
 lint: golangci-lint
@@ -56,19 +73,20 @@ apigen: controller-gen
 
 # This runs all necessary steps to prepare for a commit.
 .PHONY: precommit
-precommit: tidy codespell apigen format lint
+precommit: tidy codespell apigen format lint editorconfig helm-lint
 
 # This runs precommit and checks for any differences in the codebase, failing if there are any.
 .PHONY: check
-check: editorconfig-checker
-	@$(MAKE) precommit
-	@$(MAKE) helm-package --version ${HELM_CHART_VERSION}
-	@echo "running editorconfig-checker"
-	@$(EDITORCONFIG_CHECKER)
+check: precommit
 	@if [ ! -z "`git status -s`" ]; then \
 		echo "The following differences will fail CI until committed:"; \
 		git diff --exit-code; \
 	fi
+
+# This runs the editorconfig-checker on the codebase.
+editorconfig: editorconfig-checker
+	@echo "running editorconfig-checker"
+	@$(EDITORCONFIG_CHECKER)
 
 # This runs the unit tests for the codebase.
 .PHONY: test
