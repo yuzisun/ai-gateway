@@ -35,7 +35,7 @@ import (
 var defaultSchema = aigv1a1.VersionedAPISchema{Schema: aigv1a1.APISchemaOpenAI, Version: "v1"}
 
 func extProcName(aiGatewayRouteName string) string {
-	return fmt.Sprintf("ai-gateway-ai-gateway-route-extproc-%s", aiGatewayRouteName)
+	return fmt.Sprintf("eaig-route-extproc-%s", aiGatewayRouteName)
 }
 
 // TestStartControllers tests the [controller.StartControllers] function.
@@ -202,7 +202,7 @@ func TestStartControllers(t *testing.T) {
 					t.Logf("failed to get http route %s: %v", route, err)
 					return false
 				}
-				require.Len(t, httpRoute.Spec.Rules, 2)
+				require.Len(t, httpRoute.Spec.Rules, 3) // 2 for backends, 1 for the default backend.
 				require.Len(t, httpRoute.Spec.Rules[0].Matches, 1)
 				require.Len(t, httpRoute.Spec.Rules[0].Matches[0].Headers, 1)
 				require.Equal(t, "x-envoy-ai-gateway-selected-backend", string(httpRoute.Spec.Rules[0].Matches[0].Headers[0].Name))
