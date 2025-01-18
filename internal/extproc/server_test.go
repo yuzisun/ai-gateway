@@ -36,7 +36,8 @@ func TestServer_LoadConfig(t *testing.T) {
 	})
 	t.Run("ok", func(t *testing.T) {
 		config := &filterconfig.Config{
-			TokenUsageMetadata:       &filterconfig.TokenUsageMetadata{Namespace: "ns", Key: "key"},
+			MetadataNamespace:        "ns",
+			LLMRequestCosts:          []filterconfig.LLMRequestCost{{MetadataKey: "key", Type: filterconfig.LLMRequestCostTypeOutputToken}},
 			Schema:                   filterconfig.VersionedAPISchema{Name: filterconfig.APISchemaOpenAI},
 			SelectedBackendHeaderKey: "x-envoy-ai-gateway-selected-backend",
 			ModelNameHeaderKey:       "x-model-name",
@@ -71,9 +72,10 @@ func TestServer_LoadConfig(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NotNil(t, s.config)
-		require.NotNil(t, s.config.tokenUsageMetadata)
-		require.Equal(t, "ns", s.config.tokenUsageMetadata.Namespace)
-		require.Equal(t, "key", s.config.tokenUsageMetadata.Key)
+		require.NotEmpty(t, s.config.requestCosts)
+		require.Equal(t, "ns", s.config.metadataNamespace)
+		require.Equal(t, "key", s.config.requestCosts[0].MetadataKey)
+		require.Equal(t, filterconfig.LLMRequestCostTypeOutputToken, s.config.requestCosts[0].Type)
 		require.NotNil(t, s.config.router)
 		require.NotNil(t, s.config.bodyParser)
 		require.Equal(t, "x-envoy-ai-gateway-selected-backend", s.config.selectedBackendHeaderKey)

@@ -191,6 +191,24 @@ func (c *configSink) updateExtProcConfigMap(aiGatewayRoute *aigv1a1.AIGatewayRou
 		}
 	}
 
+	ec.MetadataNamespace = aigv1a1.AIGatewayFilterMetadataNamespace
+	for _, cost := range aiGatewayRoute.Spec.LLMRequestCosts {
+		fc := filterconfig.LLMRequestCost{MetadataKey: cost.MetadataKey}
+		switch cost.Type {
+		case aigv1a1.LLMRequestCostTypeInputToken:
+			fc.Type = filterconfig.LLMRequestCostTypeInputToken
+		case aigv1a1.LLMRequestCostTypeOutputToken:
+			fc.Type = filterconfig.LLMRequestCostTypeOutputToken
+		case aigv1a1.LLMRequestCostTypeTotalToken:
+			fc.Type = filterconfig.LLMRequestCostTypeTotalToken
+		case aigv1a1.LLMRequestCostTypeCEL:
+			fc.Type = filterconfig.LLMRequestCostTypeCELExpression
+		default:
+			return fmt.Errorf("unknown request cost type: %s", cost.Type)
+		}
+		ec.LLMRequestCosts = append(ec.LLMRequestCosts, fc)
+	}
+
 	marshaled, err := yaml.Marshal(ec)
 	if err != nil {
 		return fmt.Errorf("failed to marshal extproc config: %w", err)
