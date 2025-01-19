@@ -12,6 +12,15 @@ import (
 	"github.com/envoyproxy/ai-gateway/internal/extproc/router"
 )
 
+var (
+	statusHeaderName       = ":status"
+	contentTypeHeaderName  = "content-type"
+	awsErrorTypeHeaderName = "x-amzn-errortype"
+	jsonContentType        = "application/json"
+	OpenAIBackendError     = "OpenAIBackendError"
+	AWSBedrockBackendError = "AWSBedrockBackendError"
+)
+
 // Factory creates a [Translator] for the given API schema combination and request path.
 //
 //   - `path`: the path of the request.
@@ -64,10 +73,20 @@ type Translator interface {
 	//  - This returns `usedToken` that is extracted from the body and will be used to do token rate limiting.
 	//
 	// TODO: this is coupled with "LLM" specific. Once we have another use case, we need to refactor this.
-	ResponseBody(body io.Reader, endOfStream bool) (
+	ResponseBody(respHeaders map[string]string, body io.Reader, endOfStream bool) (
 		headerMutation *extprocv3.HeaderMutation,
 		bodyMutation *extprocv3.BodyMutation,
 		tokenUsage LLMTokenUsage,
+		err error,
+	)
+
+	// ResponseError translates the response error.
+	//  - `headers` is the response headers.
+	//  - `body` is the response error body.
+	//  - This returns `headerMutation` and `bodyMutation` that can be nil to indicate no mutation.
+	ResponseError(respHeaders map[string]string, body io.Reader) (
+		headerMutation *extprocv3.HeaderMutation,
+		bodyMutation *extprocv3.BodyMutation,
 		err error,
 	)
 }
