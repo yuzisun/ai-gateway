@@ -449,51 +449,44 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) bedrockToolUseToOpenAICal
 func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseError(respHeaders map[string]string, body io.Reader) (
 	headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, err error,
 ) {
-	var statusCode string
-	var ok bool
-	if statusCode, ok = respHeaders[statusHeaderName]; ok && statusCode == string(typev3.StatusCode_OK) {
-		return nil, nil, nil
-	}
-	if v, ok := respHeaders[contentTypeHeaderName]; ok {
-		var openaiError openai.Error
-		if v == jsonContentType {
-			var bedrockError awsbedrock.BedrockException
-			if err := json.NewDecoder(body).Decode(&bedrockError); err != nil {
-				return nil, nil, fmt.Errorf("failed to unmarshal error body: %w", err)
-			}
-			openaiError = openai.Error{
-				Type: "error",
-				Error: openai.ErrorType{
-					Type:    respHeaders[awsErrorTypeHeaderName],
-					Message: bedrockError.Message,
-					Code:    &statusCode,
-				},
-			}
-		} else {
-			buf, err := io.ReadAll(body)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to read error body: %w", err)
-			}
-			openaiError = openai.Error{
-				Type: "error",
-				Error: openai.ErrorType{
-					Type:    AWSBedrockBackendError,
-					Message: string(buf),
-					Code:    &statusCode,
-				},
-			}
+	statusCode, _ := respHeaders[statusHeaderName]
+	var openaiError openai.Error
+	if v, ok := respHeaders[contentTypeHeaderName]; ok && v == jsonContentType {
+		var bedrockError awsbedrock.BedrockException
+		if err := json.NewDecoder(body).Decode(&bedrockError); err != nil {
+			return nil, nil, fmt.Errorf("failed to unmarshal error body: %w", err)
 		}
-		mut := &extprocv3.BodyMutation_Body{}
-		if errBody, err := json.Marshal(openaiError); err != nil {
-			return nil, nil, fmt.Errorf("failed to marshal error body: %w", err)
-		} else {
-			mut.Body = errBody
+		openaiError = openai.Error{
+			Type: "error",
+			Error: openai.ErrorType{
+				Type:    respHeaders[awsErrorTypeHeaderName],
+				Message: bedrockError.Message,
+				Code:    &statusCode,
+			},
 		}
-		headerMutation = &extprocv3.HeaderMutation{}
-		setContentLength(headerMutation, mut.Body)
-		return headerMutation, &extprocv3.BodyMutation{Mutation: mut}, nil
+	} else {
+		buf, err := io.ReadAll(body)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read error body: %w", err)
+		}
+		openaiError = openai.Error{
+			Type: "error",
+			Error: openai.ErrorType{
+				Type:    AWSBedrockBackendError,
+				Message: string(buf),
+				Code:    &statusCode,
+			},
+		}
 	}
-	return nil, nil, nil
+	mut := &extprocv3.BodyMutation_Body{}
+	if errBody, err := json.Marshal(openaiError); err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal error body: %w", err)
+	} else {
+		mut.Body = errBody
+	}
+	headerMutation = &extprocv3.HeaderMutation{}
+	setContentLength(headerMutation, mut.Body)
+	return headerMutation, &extprocv3.BodyMutation{Mutation: mut}, nil
 }
 
 // ResponseBody implements [Translator.ResponseBody].

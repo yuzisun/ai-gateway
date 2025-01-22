@@ -55,36 +55,30 @@ func (o *openAIToOpenAITranslatorV1ChatCompletion) RequestBody(body router.Reque
 func (o *openAIToOpenAITranslatorV1ChatCompletion) ResponseError(respHeaders map[string]string, body io.Reader) (
 	headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, err error,
 ) {
-	var statusCode string
-	var ok bool
-	if statusCode, ok = respHeaders[statusHeaderName]; ok && statusCode == string(typev3.StatusCode_OK) {
-		return nil, nil, nil
-	}
-	if v, ok := respHeaders[contentTypeHeaderName]; ok {
+	statusCode, _ := respHeaders[statusHeaderName]
+	if v, ok := respHeaders[contentTypeHeaderName]; ok && v != jsonContentType {
 		var openaiError openai.Error
-		if v != jsonContentType {
-			buf, err := io.ReadAll(body)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to read error body: %w", err)
-			}
-			openaiError = openai.Error{
-				Type: "error",
-				Error: openai.ErrorType{
-					Type:    OpenAIBackendError,
-					Message: string(buf),
-					Code:    &statusCode,
-				},
-			}
-			mut := &extprocv3.BodyMutation_Body{}
-			if errBody, err := json.Marshal(openaiError); err != nil {
-				return nil, nil, fmt.Errorf("failed to marshal error body: %w", err)
-			} else {
-				mut.Body = errBody
-			}
-			headerMutation = &extprocv3.HeaderMutation{}
-			setContentLength(headerMutation, mut.Body)
-			return headerMutation, &extprocv3.BodyMutation{Mutation: mut}, nil
+		buf, err := io.ReadAll(body)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read error body: %w", err)
 		}
+		openaiError = openai.Error{
+			Type: "error",
+			Error: openai.ErrorType{
+				Type:    OpenAIBackendError,
+				Message: string(buf),
+				Code:    &statusCode,
+			},
+		}
+		mut := &extprocv3.BodyMutation_Body{}
+		if errBody, err := json.Marshal(openaiError); err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal error body: %w", err)
+		} else {
+			mut.Body = errBody
+		}
+		headerMutation = &extprocv3.HeaderMutation{}
+		setContentLength(headerMutation, mut.Body)
+		return headerMutation, &extprocv3.BodyMutation{Mutation: mut}, nil
 	}
 	return nil, nil, nil
 }
