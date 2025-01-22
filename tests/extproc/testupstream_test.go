@@ -66,6 +66,8 @@ func TestWithTestUpstream(t *testing.T) {
 		responseBody,
 		// responseType is either empty, "sse" or "aws-event-stream" as implemented by the test upstream.
 		responseType,
+		// responseStatus is the HTTP status code of the response.q
+		responseStatus,
 		// expPath is the expected path to be sent to the test upstream.
 		expPath string
 		// expRequestBody is the expected body to be sent to the test upstream.
@@ -77,14 +79,15 @@ func TestWithTestUpstream(t *testing.T) {
 		expResponseBody string
 	}{
 		{
-			name:         "unknown path",
-			backend:      "openai",
-			path:         "/unknown",
-			method:       http.MethodPost,
-			requestBody:  `{"prompt": "hello"}`,
-			responseBody: `{"error": "unknown path"}`,
-			expPath:      "/unknown",
-			expStatus:    http.StatusInternalServerError,
+			name:           "unknown path",
+			backend:        "openai",
+			path:           "/unknown",
+			method:         http.MethodPost,
+			requestBody:    `{"prompt": "hello"}`,
+			responseBody:   `{"error": "unknown path"}`,
+			expPath:        "/unknown",
+			responseStatus: "500",
+			expStatus:      http.StatusInternalServerError,
 		},
 		{
 			name:            "aws - /v1/chat/completions",
@@ -168,6 +171,7 @@ data: [DONE]
 			method:          http.MethodPost,
 			requestBody:     `{"model":"something","messages":[{"role":"system","content":"You are a chatbot."}], "stream": true}`,
 			expPath:         "/v1/chat/completions",
+			responseStatus:  "400",
 			expStatus:       http.StatusBadRequest,
 			responseBody:    `{"error": {"message": "missing required field", "type": "BadRequestError", "code": "400"}}`,
 			expResponseBody: `{"error": {"message": "missing required field", "type": "BadRequestError", "code": "400"}}`,
@@ -179,7 +183,8 @@ data: [DONE]
 			responseType:    "",
 			method:          http.MethodPost,
 			requestBody:     `{"model":"something","messages":[{"role":"system","content":"You are a chatbot."}], "stream": true}`,
-			expPath:         "/v1/chat/completions",
+			expPath:         "/model/something/converse-stream",
+			responseStatus:  "429",
 			expStatus:       http.StatusTooManyRequests,
 			responseBody:    `{"message": "aws bedrock rate limit exceeded"}`,
 			expResponseBody: `{"error": {"message": "aws bedrock rate limit exceeded", "type": "ThrottledException", "code": "429"}}`,
@@ -192,6 +197,7 @@ data: [DONE]
 				req.Header.Set("x-test-backend", tc.backend)
 				req.Header.Set("x-response-body", base64.StdEncoding.EncodeToString([]byte(tc.responseBody)))
 				req.Header.Set("x-expected-path", base64.StdEncoding.EncodeToString([]byte(tc.expPath)))
+				req.Header.Set("x-response-status", tc.responseStatus)
 				if tc.responseType != "" {
 					req.Header.Set("x-response-type", tc.responseType)
 				}
