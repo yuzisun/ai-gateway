@@ -66,8 +66,12 @@ func TestWithTestUpstream(t *testing.T) {
 		responseBody,
 		// responseType is either empty, "sse" or "aws-event-stream" as implemented by the test upstream.
 		responseType,
-		// responseStatus is the HTTP status code of the response.q
+		// responseStatus is the HTTP status code of the response.
 		responseStatus,
+		// responseHeaders are the headers sent in the HTTP response
+		// The value is a base64 encoded string of comma separated key-value pairs.
+		// E.g. "key1:value1,key2:value2".
+		responseHeaders,
 		// expPath is the expected path to be sent to the test upstream.
 		expPath string
 		// expRequestBody is the expected body to be sent to the test upstream.
@@ -186,8 +190,9 @@ data: [DONE]
 			expPath:         "/model/something/converse-stream",
 			responseStatus:  "429",
 			expStatus:       http.StatusTooManyRequests,
+			responseHeaders: "x-amzn-errortype:ThrottledException",
 			responseBody:    `{"message": "aws bedrock rate limit exceeded"}`,
-			expResponseBody: `{"error": {"message": "aws bedrock rate limit exceeded", "type": "ThrottledException", "code": "429"}}`,
+			expResponseBody: `{"type":"error","error":{"type":"ThrottledException","code":"429","message":"aws bedrock rate limit exceeded"}}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -201,6 +206,9 @@ data: [DONE]
 				if tc.responseType != "" {
 					req.Header.Set("x-response-type", tc.responseType)
 				}
+				if tc.responseHeaders != "" {
+					req.Header.Set("x-response-headers", base64.StdEncoding.EncodeToString([]byte(tc.responseHeaders)))
+				}
 				if tc.expRequestBody != "" {
 					req.Header.Set("x-expected-request-body", base64.StdEncoding.EncodeToString([]byte(tc.expRequestBody)))
 				}
@@ -211,7 +219,6 @@ data: [DONE]
 					return false
 				}
 				defer func() { _ = resp.Body.Close() }()
-				t.Logf("response headers %v", resp.Header)
 				if resp.StatusCode != tc.expStatus {
 					t.Logf("unexpected status code: %d", resp.StatusCode)
 					return false
