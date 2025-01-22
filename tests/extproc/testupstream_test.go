@@ -160,6 +160,30 @@ data: [DONE]
 
 `,
 		},
+		{
+			name:            "openai - /v1/chat/completions - error response",
+			backend:         "openai",
+			path:            "/v1/chat/completions",
+			responseType:    "",
+			method:          http.MethodPost,
+			requestBody:     `{"model":"something","messages":[{"role":"system","content":"You are a chatbot."}], "stream": true}`,
+			expPath:         "/v1/chat/completions",
+			expStatus:       http.StatusBadRequest,
+			responseBody:    `{"error": {"message": "missing required field", "type": "BadRequestError", "code": "400"}}`,
+			expResponseBody: `{"error": {"message": "missing required field", "type": "BadRequestError", "code": "400"}}`,
+		},
+		{
+			name:            "aws-bedrock - /v1/chat/completions - error response",
+			backend:         "aws-bedrock",
+			path:            "/v1/chat/completions",
+			responseType:    "",
+			method:          http.MethodPost,
+			requestBody:     `{"model":"something","messages":[{"role":"system","content":"You are a chatbot."}], "stream": true}`,
+			expPath:         "/v1/chat/completions",
+			expStatus:       http.StatusTooManyRequests,
+			responseBody:    `{"message": "aws bedrock rate limit exceeded"}`,
+			expResponseBody: `{"error": {"message": "aws bedrock rate limit exceeded", "type": "ThrottledException", "code": "429"}}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Eventually(t, func() bool {
