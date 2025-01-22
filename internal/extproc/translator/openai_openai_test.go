@@ -79,7 +79,7 @@ func TestOpenAIToOpenAITranslator_ResponseError(t *testing.T) {
 			output: openai.Error{
 				Type: "error",
 				Error: openai.ErrorType{
-					Type:    OpenAIBackendError,
+					Type:    openAIBackendError,
 					Code:    ptr.To("503"),
 					Message: "service not available",
 				},

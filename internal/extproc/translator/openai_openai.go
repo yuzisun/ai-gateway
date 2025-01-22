@@ -65,7 +65,7 @@ func (o *openAIToOpenAITranslatorV1ChatCompletion) ResponseError(respHeaders map
 		openaiError = openai.Error{
 			Type: "error",
 			Error: openai.ErrorType{
-				Type:    OpenAIBackendError,
+				Type:    openAIBackendError,
 				Message: string(buf),
 				Code:    &statusCode,
 			},

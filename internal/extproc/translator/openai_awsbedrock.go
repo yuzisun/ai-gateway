@@ -472,7 +472,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseError(respHeaders
 		openaiError = openai.Error{
 			Type: "error",
 			Error: openai.ErrorType{
-				Type:    AWSBedrockBackendError,
+				Type:    awsBedrockBackendError,
 				Message: string(buf),
 				Code:    &statusCode,
 			},

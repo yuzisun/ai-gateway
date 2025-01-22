@@ -787,7 +787,7 @@ func TestOpenAIToAWSBedrockTranslator_ResponseError(t *testing.T) {
 			output: openai.Error{
 				Type: "error",
 				Error: openai.ErrorType{
-					Type:    AWSBedrockBackendError,
+					Type:    awsBedrockBackendError,
 					Code:    ptr.To("503"),
 					Message: "service not available",
 				},

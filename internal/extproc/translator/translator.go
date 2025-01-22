@@ -17,8 +17,8 @@ var (
 	contentTypeHeaderName  = "content-type"
 	awsErrorTypeHeaderName = "x-amzn-errortype"
 	jsonContentType        = "application/json"
-	OpenAIBackendError     = "OpenAIBackendError"
-	AWSBedrockBackendError = "AWSBedrockBackendError"
+	openAIBackendError     = "OpenAIBackendError"
+	awsBedrockBackendError = "AWSBedrockBackendError"
 )
 
 // Factory creates a [Translator] for the given API schema combination and request path.
