@@ -8,13 +8,13 @@ import (
 	"io"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extprocv3http "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
-	typev3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	"k8s.io/utils/ptr"
 
 	"github.com/envoyproxy/ai-gateway/internal/apischema/awsbedrock"
@@ -386,8 +386,12 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseHeaders(headers map[string]string) (
 	headerMutation *extprocv3.HeaderMutation, err error,
 ) {
-	if v, ok := headers[statusHeaderName]; ok && v != string(typev3.StatusCode_OK) {
-		return nil, nil
+	if v, ok := headers[statusHeaderName]; ok {
+		if v, err := strconv.Atoi(v); err == nil {
+			if !isGoodStatusCode(v) {
+				return nil, nil
+			}
+		}
 	}
 	if o.stream {
 		contentType := headers["content-type"]
@@ -449,7 +453,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) bedrockToolUseToOpenAICal
 func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseError(respHeaders map[string]string, body io.Reader) (
 	headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, err error,
 ) {
-	statusCode, _ := respHeaders[statusHeaderName]
+	statusCode := respHeaders[statusHeaderName]
 	var openaiError openai.Error
 	if v, ok := respHeaders[contentTypeHeaderName]; ok && v == jsonContentType {
 		var bedrockError awsbedrock.BedrockException
@@ -493,9 +497,13 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseError(respHeaders
 func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders map[string]string, body io.Reader, endOfStream bool) (
 	headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, tokenUsage LLMTokenUsage, err error,
 ) {
-	if v, ok := respHeaders[statusHeaderName]; ok && v != string(typev3.StatusCode_OK) {
-		headerMutation, bodyMutation, err = o.ResponseError(respHeaders, body)
-		return headerMutation, bodyMutation, LLMTokenUsage{}, err
+	if v, ok := respHeaders[statusHeaderName]; ok {
+		if v, err := strconv.Atoi(v); err == nil {
+			if !isGoodStatusCode(v) {
+				headerMutation, bodyMutation, err = o.ResponseError(respHeaders, body)
+				return headerMutation, bodyMutation, LLMTokenUsage{}, err
+			}
+		}
 	}
 	mut := &extprocv3.BodyMutation_Body{}
 	if o.stream {

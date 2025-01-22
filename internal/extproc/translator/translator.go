@@ -21,6 +21,10 @@ var (
 	awsBedrockBackendError = "AWSBedrockBackendError"
 )
 
+func isGoodStatusCode(code int) bool {
+	return code >= 200 && code < 300
+}
+
 // Factory creates a [Translator] for the given API schema combination and request path.
 //
 //   - `path`: the path of the request.

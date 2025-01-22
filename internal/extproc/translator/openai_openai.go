@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 
 	extprocv3http "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
-	typev3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 
 	"github.com/envoyproxy/ai-gateway/internal/apischema/openai"
 	"github.com/envoyproxy/ai-gateway/internal/extproc/router"
@@ -55,7 +55,7 @@ func (o *openAIToOpenAITranslatorV1ChatCompletion) RequestBody(body router.Reque
 func (o *openAIToOpenAITranslatorV1ChatCompletion) ResponseError(respHeaders map[string]string, body io.Reader) (
 	headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, err error,
 ) {
-	statusCode, _ := respHeaders[statusHeaderName]
+	statusCode := respHeaders[statusHeaderName]
 	if v, ok := respHeaders[contentTypeHeaderName]; ok && v != jsonContentType {
 		var openaiError openai.Error
 		buf, err := io.ReadAll(body)
@@ -87,9 +87,13 @@ func (o *openAIToOpenAITranslatorV1ChatCompletion) ResponseError(respHeaders map
 func (o *openAIToOpenAITranslatorV1ChatCompletion) ResponseBody(respHeaders map[string]string, body io.Reader, _ bool) (
 	headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, tokenUsage LLMTokenUsage, err error,
 ) {
-	if v, ok := respHeaders[statusHeaderName]; ok && v != string(typev3.StatusCode_OK) {
-		headerMutation, bodyMutation, err = o.ResponseError(respHeaders, body)
-		return headerMutation, bodyMutation, LLMTokenUsage{}, err
+	if v, ok := respHeaders[statusHeaderName]; ok {
+		if v, err := strconv.Atoi(v); err == nil {
+			if !isGoodStatusCode(v) {
+				headerMutation, bodyMutation, err = o.ResponseError(respHeaders, body)
+				return headerMutation, bodyMutation, LLMTokenUsage{}, err
+			}
+		}
 	}
 	if o.stream {
 		if !o.bufferingDone {

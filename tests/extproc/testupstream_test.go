@@ -181,7 +181,7 @@ data: [DONE]
 					return false
 				}
 				defer func() { _ = resp.Body.Close() }()
-
+				t.Logf("response headers %v", resp.Header)
 				if resp.StatusCode != tc.expStatus {
 					t.Logf("unexpected status code: %d", resp.StatusCode)
 					return false
