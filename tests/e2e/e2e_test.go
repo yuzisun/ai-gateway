@@ -149,7 +149,7 @@ func initAIGateway(ctx context.Context) (err error) {
 		initLog(fmt.Sprintf("\tdone (took %.2fs in total)\n", elapsed.Seconds()))
 	}()
 	initLog("\tHelm Install")
-	helm := exec.CommandContext(ctx, "helm", "upgrade", "-i", "eaig",
+	helm := exec.CommandContext(ctx, "helm", "upgrade", "-i", "ai-eg",
 		"../../manifests/charts/ai-gateway-helm",
 		"-n", "envoy-ai-gateway-system", "--create-namespace")
 	helm.Stdout = os.Stdout
@@ -189,6 +189,12 @@ func kubectl(ctx context.Context, args ...string) *exec.Cmd {
 
 func kubectlApplyManifest(ctx context.Context, manifest string) (err error) {
 	cmd := kubectl(ctx, "apply", "--server-side", "-f", manifest, "--force-conflicts")
+	return cmd.Run()
+}
+
+func kubectlApplyManifestStdin(ctx context.Context, manifest string) (err error) {
+	cmd := kubectl(ctx, "apply", "--server-side", "-f", "-")
+	cmd.Stdin = bytes.NewReader([]byte(manifest))
 	return cmd.Run()
 }
 
@@ -288,4 +294,13 @@ func (f portForwarder) kill() {
 // address returns the address of the port forwarder.
 func (f portForwarder) address() string {
 	return fmt.Sprintf("http://127.0.0.1:%d", f.localPort)
+}
+
+// getEnvVarOrSkip requires an environment variable to be set.
+func getEnvVarOrSkip(t *testing.T, envVar string) string {
+	value := os.Getenv(envVar)
+	if value == "" {
+		t.Skipf("Environment variable %s is not set", envVar)
+	}
+	return value
 }
