@@ -386,25 +386,16 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseHeaders(headers map[string]string) (
 	headerMutation *extprocv3.HeaderMutation, err error,
 ) {
-	if v, ok := headers[statusHeaderName]; ok {
-		if v, err := strconv.Atoi(v); err == nil {
-			if !isGoodStatusCode(v) {
-				return nil, nil
-			}
-		}
-	}
 	if o.stream {
 		contentType := headers["content-type"]
-		if contentType != "application/vnd.amazon.eventstream" {
-			return nil, fmt.Errorf("unexpected content-type for streaming: %s", contentType)
+		if contentType == "application/vnd.amazon.eventstream" {
+			// We need to change the content-type to text/event-stream for streaming responses.
+			return &extprocv3.HeaderMutation{
+				SetHeaders: []*corev3.HeaderValueOption{
+					{Header: &corev3.HeaderValue{Key: "content-type", Value: "text/event-stream"}},
+				},
+			}, nil
 		}
-
-		// We need to change the content-type to text/event-stream for streaming responses.
-		return &extprocv3.HeaderMutation{
-			SetHeaders: []*corev3.HeaderValueOption{
-				{Header: &corev3.HeaderValue{Key: "content-type", Value: "text/event-stream"}},
-			},
-		}, nil
 	}
 	return nil, nil
 }
