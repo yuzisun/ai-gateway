@@ -85,10 +85,41 @@ func requireExecutableInPath(t *testing.T, executables ...string) {
 // requireRunBashCommand runs a bash command. This is used to run the code blocks in the markdown file.
 func requireRunBashCommand(t *testing.T, command string) {
 	fmt.Printf("\u001b[32m=== Running command: %s\u001B[0m\n", command)
-	cmd := exec.Command("bash", "-c", command)
+	cmd := newBashCommand(command)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	require.NoError(t, cmd.Run())
+}
+
+func requireRunBashCommandEventually(t *testing.T, command string, timeout, interval time.Duration) {
+	fmt.Printf("\u001b[32m=== Running command eventually (timeout=%s,interval=%s): %s\u001B[0m\n",
+		timeout, interval, command)
+	require.Eventually(t, func() bool {
+		cmd := newBashCommand(command)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run() == nil
+	}, timeout, interval)
+}
+
+func requireStartBackgroundBashCommand(t *testing.T, command string) (kill func()) {
+	fmt.Printf("\u001b[32m=== Starting background command: %s\u001B[0m\n", command)
+	cmd := newBashCommand(command)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	require.NoError(t, cmd.Start())
+	return func() { _ = cmd.Process.Signal(os.Interrupt) }
+}
+
+func runBashCommandAndIgnoreError(command string) {
+	cmd := newBashCommand(command)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	_ = cmd.Run()
+}
+
+func newBashCommand(command string) *exec.Cmd {
+	return exec.Command("bash", "-c", command)
 }
 
 // requireNewKindCluster creates a new kind cluster if it does not already exist.
@@ -107,4 +138,13 @@ func requireNewKindCluster(t *testing.T, clusterName string) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	require.NoError(t, cmd.Run())
+}
+
+// getEnvVarOrSkip requires an environment variable to be set.
+func getEnvVarOrSkip(t *testing.T, envVar string) string {
+	value := os.Getenv(envVar)
+	if value == "" {
+		t.Skipf("Environment variable %s is not set", envVar)
+	}
+	return value
 }
