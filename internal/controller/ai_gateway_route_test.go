@@ -33,11 +33,13 @@ func Test_extProcName(t *testing.T) {
 func TestAIGatewayRouteController_ensuresExtProcConfigMapExists(t *testing.T) {
 	c := &aiGatewayRouteController{client: fake.NewClientBuilder().WithScheme(scheme).Build()}
 	c.kube = fake2.NewClientset()
+	name := "myroute"
+	ownerRef := []metav1.OwnerReference{
+		{APIVersion: "aigateway.envoyproxy.io/v1alpha1", Kind: "AIGatewayRoute", Name: name, Controller: ptr.To(true), BlockOwnerDeletion: ptr.To(true)},
+	}
+	aiGatewayRoute := &aigv1a1.AIGatewayRoute{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"}}
 
-	ownerRef := []metav1.OwnerReference{{APIVersion: "v1", Kind: "Kind", Name: "Name"}}
-	aiGatewayRoute := &aigv1a1.AIGatewayRoute{ObjectMeta: metav1.ObjectMeta{Name: "myroute", Namespace: "default"}}
-
-	err := c.ensuresExtProcConfigMapExists(context.Background(), aiGatewayRoute, ownerRef)
+	err := c.ensuresExtProcConfigMapExists(context.Background(), aiGatewayRoute)
 	require.NoError(t, err)
 
 	configMap, err := c.kube.CoreV1().ConfigMaps("default").Get(context.Background(), extProcName(aiGatewayRoute), metav1.GetOptions{})
@@ -48,16 +50,19 @@ func TestAIGatewayRouteController_ensuresExtProcConfigMapExists(t *testing.T) {
 	require.Equal(t, filterconfig.DefaultConfig, configMap.Data[expProcConfigFileName])
 
 	// Doing it again should not fail.
-	err = c.ensuresExtProcConfigMapExists(context.Background(), aiGatewayRoute, ownerRef)
+	err = c.ensuresExtProcConfigMapExists(context.Background(), aiGatewayRoute)
 	require.NoError(t, err)
 }
 
 func TestAIGatewayRouteController_reconcileExtProcExtensionPolicy(t *testing.T) {
 	c := &aiGatewayRouteController{client: fake.NewClientBuilder().WithScheme(scheme).Build()}
-	ownerRef := []metav1.OwnerReference{{APIVersion: "v1", Kind: "Kind", Name: "Name"}}
+	name := "myroute"
+	ownerRef := []metav1.OwnerReference{
+		{APIVersion: "aigateway.envoyproxy.io/v1alpha1", Kind: "AIGatewayRoute", Name: name, Controller: ptr.To(true), BlockOwnerDeletion: ptr.To(true)},
+	}
 	aiGatewayRoute := &aigv1a1.AIGatewayRoute{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "myroute",
+			Name:      name,
 			Namespace: "default",
 		},
 		Spec: aigv1a1.AIGatewayRouteSpec{
@@ -67,7 +72,7 @@ func TestAIGatewayRouteController_reconcileExtProcExtensionPolicy(t *testing.T) 
 			},
 		},
 	}
-	err := c.reconcileExtProcExtensionPolicy(context.Background(), aiGatewayRoute, ownerRef)
+	err := c.reconcileExtProcExtensionPolicy(context.Background(), aiGatewayRoute)
 	require.NoError(t, err)
 	var extPolicy egv1a1.EnvoyExtensionPolicy
 	err = c.client.Get(context.Background(), client.ObjectKey{Name: extProcName(aiGatewayRoute), Namespace: "default"}, &extPolicy)
@@ -94,7 +99,7 @@ func TestAIGatewayRouteController_reconcileExtProcExtensionPolicy(t *testing.T) 
 		{LocalPolicyTargetReference: gwapiv1a2.LocalPolicyTargetReference{Name: "cat"}},
 		{LocalPolicyTargetReference: gwapiv1a2.LocalPolicyTargetReference{Name: "bird"}},
 	}
-	err = c.reconcileExtProcExtensionPolicy(context.Background(), aiGatewayRoute, ownerRef)
+	err = c.reconcileExtProcExtensionPolicy(context.Background(), aiGatewayRoute)
 	require.NoError(t, err)
 
 	err = c.client.Get(context.Background(), client.ObjectKey{Name: extProcName(aiGatewayRoute), Namespace: "default"}, &extPolicy)
