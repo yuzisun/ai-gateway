@@ -27,19 +27,19 @@
 The AI Gateway project is to act as a centralized access point for managing and controlling access to various AI models within an organization.
 It provides a single interface for developers to interact with different AI providers while ensuring security, governance and observability over AI traffic.
 
-This proposal introduces four new Custom Resource Definitions(CRD) to support the requirements of the Envoy AI Gateway: **LLMRoute**, **LLMBackend**, **LLMSecurityPolicy**.
+This proposal introduces four new Custom Resource Definitions(CRD) to support the requirements of the Envoy AI Gateway: **AIGatewayRoute**, **AIServiceBackend**.
 
-* The `LLMRoute` specifies the schema for the user requests and routing rules associated with a list of `LLMBackend`.
-* The `LLMBackend` defines the request schema and security policy for various AI providers. This resource is managed by the Inference Platform Admin persona.
-* The `LLMSecurityPolicy` defines the authentication policy for AI provider using the API token or OIDC federation.
-* For Token Rate Limiting we plan to extend envoy gateway to support generic usage based rate limiting.
+* The `AIGatewayRoute` specifies the schema for the user requests and routing rules to the `AIServiceBackend`s.
+* The `AIServiceBackend` defines the AI service backend schema and security policy for various AI providers. This resource is managed by the Inference Platform Admin persona.
+* The `BackendSecurityPolicy` defines the authentication policy for AI service provider using the API token or OIDC federation.
+* Rate Limiting for LLM workload is based on tokens, we extend envoy gateway to support generic cost based rate limiting.
 
 ## Goals
 
 - Drive the consensus on the Envoy AI Gateway API for the MVP features
-  - Model Upstream Access: Support accessing models from an initial list of AI Providers: AWS Bedrock, Google AI Studio, Azure OpenAI.
+  - Upstream Model Access: Support accessing models from an initial list of AI Providers: AWS Bedrock, OpenAI.
   - Unified Client Access: Support a unified AI gateway API across AI providers.
-  - Traffic Management: Monitor and regulate AI usage, including rate limiting and cost optimization by tracking API calls and model usage.
+  - Traffic Management: Monitor and regulate AI usage, including token rate limiting and cost optimization by tracking API calls and model usage.
   - Observability: Provide detailed insights into usage patterns, performance and potential issues through logging and metrics collection.
   - Policy Enforcement: Allow organizations to set specific rules and guidelines for how AI models can be accessed and used.
 - Documentation of API decisions for posterity
@@ -57,9 +57,10 @@ Before diving into the details of the API, descriptions of the personas will hel
 
 #### Inference Platform Admin
 
-The Inference Platform Admin manages the gateway infrastructure necessary to route inference requests to a variety of LLM providers. Including handling Ops for:
-  - A list of LLM providers and supported models
-  - LLM provider API schema conversion and centralized upstream authentication configurations.
+The Inference Platform Admin manages the gateway infrastructure necessary to route inference requests to a variety of AI providers.
+Including handling Ops for:
+  - A list of AI providers and supported models
+  - AI provider API schema conversion and centralized upstream authentication configurations.
   - Traffic policy including rate limiting, fallback resilience between providers.
 
 #### Payment Team
@@ -79,61 +80,18 @@ The API design is based on these axioms:
 - The MVP heavily assumes that the requests are done using the OpenAI spec, but open to the extension in the future.
 
 
-### LLMRoute
+### AIGatewayRoute
 
-`LLMRoute` defines the unified user request schema and the routing rules to a list of supported `LLMBackend`s such as AWS Bedrock, GCP AI Studio, Azure OpenAI and KServe for self-hosted LLMs.
+`AIGatewayRoute` defines the unified user request schema and the routing rules to a list of supported `AIServiceBackend`s such as AWS Bedrock, GCP Vertex AI, Azure OpenAI and KServe for self-hosted LLMs.
 
-- `LLMRoute` serves as a way to define the unified AI Gateway API which allows downstream clients to use a single schema API to interact with multiple `LLMBackend`s.
-- The `LLMRouteRule`s are defined to route to the `LLMBackend`s based on the HTTP header matching. For some features like traffic splitting, the rules are matched in the external proc as the backend needs to be determined before
-the request body transformation is backend dependent.
--`LLMTrafficPolicy` is referenced to perform other necessary jobs for upstream authentication and rate limiting.
+- `AIGatewayRoute` serves as a way to define the unified AI Gateway API which allows downstream clients to use a single schema API to interact with multiple `AIServiceBackend`s.
+- `AIGatewayRoute`s are defined to route to the `AIServiceBackend`s based on the HTTP header/path matching. The rules are matched in the envoy ai gateway external proc as the backend needs to be determined for request body transformation and upstream authentication.
+The `HTTPRoute` handles upstream routing once backend is selected using the injected ai gateway routing header.
+- `BackendTrafficPolicy` is referenced to perform other necessary jobs for upstream authentication and rate limiting.
 
 
 ```golang
-// LLMRouteSpec details the LLMRoute configuration.
-type LLMRouteSpec struct {
-// APISchema specifies the API schema of the input that the target Gateway(s) will receive.
-// Based on this schema, the ai-gateway will perform the necessary transformation to the
-// output schema specified in the selected LLMBackend during the routing process.
-//
-// Currently, the only supported schema is OpenAI as the input schema.
-//
-// +kubebuilder:validation:Required
-// +kubebuilder:validation:XValidation:rule="self.schema == 'OpenAI'"
-APISchema LLMAPISchema `json:"inputSchema"`
-// Rules is the list of LLMRouteRule that this LLMRoute will match the traffic to.
-// Each rule is a subset of the HTTPRoute in the Gateway API (https://gateway-api.sigs.k8s.io/api-types/httproute/).
-//
-// AI Gateway controller will generate a HTTPRoute based on the configuration given here with the additional
-// modifications to achieve the necessary jobs, notably inserting the AI Gateway external processor filter.
-//
-// In the matching conditions in the LLMRouteRule, `x-envoy-ai-gateway-llm-model` header
-// can be used to describe the routing behavior in the HTTPRoute.
-//
-// +kubebuilder:validation:Required
-// +kubebuilder:validation:MaxItems=128
-Rules []LLMRouteRule `json:"rules"`
-}
 
-// LLMRouteRule is a rule that defines the routing behavior of the LLMRoute.
-type LLMRouteRule struct {
-// BackendRefs is the list of LLMBackend that this rule will route the traffic to.
-// Each backend can have a weight that determines the traffic distribution.
-//
-// The namespace of each backend is "local", i.e. the same namespace as the LLMRoute.
-//
-// +optional
-// +kubebuilder:validation:MaxItems=128
-BackendRefs []LLMRouteRuleBackendRef `json:"backendRefs,omitempty"`
-
-// Matches is the list of LLMRouteMatch that this rule will match the traffic to.
-// This is a subset of the HTTPRouteMatch in the Gateway API. See for the details:
-// https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io%2fv1.HTTPRouteMatch
-//
-// +optional
-// +kubebuilder:validation:MaxItems=128
-Matches []LLMRouteRuleMatch `json:"matches,omitempty"`
-}
 ```
 
 
