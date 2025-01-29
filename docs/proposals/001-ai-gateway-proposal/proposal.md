@@ -13,9 +13,9 @@
 -   [Proposal](#proposal)
     -   [Personas](#personas)
     -   [Axioms](#axioms)
-    -   [LLMRoute](#llmroute)
-    -   [LLMBackend](#llmbackend)
-    -   [LLMSecurityPolicy](#llmsecuritypolicy)
+    -   [AIGatewayRoute](#aigatewayroute)
+    -   [AIServiceBackend](#aiservicebackend)
+    -   [BackendSecurityPolicy](#backendsecuritypolicy)
     -   [Token Usage based Rate Limiting](#token-usage-rate-limiting)
     -   [Diagrams](#diagrams)
 - [FAQ](#faq)
@@ -177,6 +177,23 @@ BackendRefs []AIGatewayRouteRuleBackendRef `json:"backendRefs,omitempty"`
 // +kubebuilder:validation:MaxItems=128
 Matches []AIGatewayRouteRuleMatch `json:"matches,omitempty"`
 }
+
+// LLMRequestCost specifies "where" the request cost is stored in the filter metadata as well as
+// "how" the cost is calculated. By default, the cost is retrieved from "output token" in the response body.
+//
+// This can be used to subtract the usage token from the usage quota in the rate limit filter when
+// the request completes combined with `apply_on_stream_done` and `hits_addend` fields of
+// the rate limit configuration https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/route/v3/route_components.proto#config-route-v3-ratelimit
+// which is introduced in Envoy 1.33 (to be released soon as of writing).
+type LLMRequestCost struct {
+// MetadataKey is the key of the metadata storing the request cost.
+MetadataKey string `json:"metadataKey"`
+// Type is the kind of the request cost calculation.
+Type LLMRequestCostType `json:"type"`
+// CELExpression is the CEL expression to calculate the cost of the request.
+// This is not empty when the Type is LLMRequestCostTypeCELExpression.
+CELExpression string `json:"celExpression,omitempty"`
+}
 ```
 
 
@@ -268,9 +285,6 @@ OIDCExchangeToken *AWSOIDCExchangeToken `json:"oidcExchangeToken,omitempty"`
 AI Gateway project extended the envoy gateway `BackendTrafficPolicy` with a generic usage based rate limiting in [#4957](https://github.com/envoyproxy/gateway/pull/4957).
 For supporting token usage based rate limiting, we reduce the rate limit counter in the response path. Since the reduction happens after the response is complete, the rate limiting is not enforced for the current but the subsequent requests.
 The token usages are extracted from the standard token usage fields according to the OpenAI schema in the ext proc `processResponseBody` handler.
-
-The AI gateway ext proc includes an envoy rate limiting service client to reduce the counter based on the LLM inference responses. The rate limiting server configuration is updated dynamically via xDS
-whenever the rate limiting rules are changed.
 
 ```go
 type RateLimitCost struct {
@@ -375,8 +389,11 @@ Cost *RateLimitCost `json:"cost,omitempty"`
 ### Yaml Examples
 
 #### AIGatewayRoute
-The routing calculation in done in the `ExtProc` by analyzing the match rules on `AIGatewayRoute` spec to emulate the behavior in order to perform the provider specific transformation and authentication,
-because the routing decision is made at the very end of the filter chain.
+The routing calculation in done in the `ExtProc` by analyzing the match rules on `AIGatewayRoute` spec to emulate the behavior in order to perform the provider specific transformation and authentication before the routing filter is applied,
+ because it happens at the very end of the filter chain.
+
+The `AIServiceBackend` rules are specified on the `AIGatewayRoute` based on model header matching, in this example `anthropic.claude-3-5-sonnet` is routed to the AWS Bedrock and `llama-3.3-70b-instruction` is routed to the KServe backend for the self-hosted llama model.
+`LLMRequestCost` is specified with the metadata key `llm_total_token` to store the cost of the LLM request.
 
 ```yaml
 apiVersion: aigateway.envoyproxy.io/v1alpha1
@@ -395,25 +412,60 @@ spec:
     - matches:
         - headers:
             - type: Exact
-              name: x-ai-gateway-llm-backend
-              value: awsbedrock-backend
+              name: x-ai-eg-model
+              value: anthropic.claude-3-5-sonnet-20240620-v1:0
       backendRefs:
         - name: awsbedrock-backend
           weight: 100
     - matches:
         - headers:
             - type: Exact
-              name: x-ai-gateway-llm-backend
-              value: kserve-llama-backend
+              name: x-ai-eg-model
+              value: llama-3.3-70b-instruction
       backendRefs:
         - name: kserve-llama-backend
           weight: 100
+  # The following metadata keys are used to store the costs from the LLM request.
+  llmRequestCosts:
+    - metadataKey: llm_total_token
+      type: TotalToken
   filterConfig:
     externalProcess:
       replicas: 1
 ```
 
+#### BackendSecurityPolicy
+`BackendSecurityPolicy` specifies the API key or credentials that envoy AI gateway uses to authenticate with the upstream provider. In this example API key is used to authenticate with OpenAI service and
+AWS credential is used to authenticate with AWS Bedrock service.
+```yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: aws-bedrock-policy
+  namespace: default
+spec:
+  type: AWSCredentials
+  awsCredentials:
+    region: us-east-1
+    credentialsFile:
+      secretRef:
+        name: aws-credential
+      profile: default
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: openai-policy
+  namespace: default
+spec:
+  type: APIKey
+  apiKey:
+    secretRef:
+      name: openai-api-key
+```
+
 #### AIServiceBackend
+Based on the gateway routes, we define the AWS Bedrock and KServe `AIServiceBackend` along with the envoy gateway backend resource with the fqdn for the routing destination.
 ```yaml
 apiVersion: aigateway.envoyproxy.io/v1alpha1
 kind: AIServiceBackend
@@ -440,6 +492,10 @@ spec:
     group: "gateway.envoyproxy.io"
     kind: "Backend"
     name: "kserve-llama-backend"
+  BackendSecurityPolicyRef:
+    group: "aigateway.envoyproxy.io"
+    kind: "BackendSecurityPolicy"
+    name: "kserve-llama-backend"
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: Backend
@@ -449,7 +505,7 @@ metadata:
 spec:
   endpoints:
     - fqdn:
-        hostname: llama-3-1-70b-instruct-vllm.example.com
+        hostname: llama-3-3-70b-instruct-vllm.example.com
         port: 443
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
@@ -497,7 +553,7 @@ spec:
             from: Metadata
             metadata:
               namespace: "io.envoy.ai_gateway"
-              key: "ai_gateway_filter.llm_input_token"
+              key: "llm_total_token"
 ```
 
 ## Diagrams
