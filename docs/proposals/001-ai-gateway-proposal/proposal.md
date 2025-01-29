@@ -27,11 +27,11 @@
 The AI Gateway project is to act as a centralized access point for managing and controlling access to various AI models within an organization.
 It provides a single interface for developers to interact with different AI providers while ensuring security, governance and observability over AI traffic.
 
-This proposal introduces four new Custom Resource Definitions(CRD) to support the requirements of the Envoy AI Gateway: **AIGatewayRoute**, **AIServiceBackend**.
+This proposal introduces new Custom Resource Definitions(CRD) to support the requirements of the Envoy AI Gateway: **AIGatewayRoute**, **AIServiceBackend** and **BackendSecurityPolicy**.
 
 * The `AIGatewayRoute` specifies the schema for the user requests and routing rules to the `AIServiceBackend`s.
 * The `AIServiceBackend` defines the AI service backend schema and security policy for various AI providers. This resource is managed by the Inference Platform Admin persona.
-* The `BackendSecurityPolicy` defines the authentication policy for AI service provider using the API token or OIDC federation.
+* The `BackendSecurityPolicy` defines the authentication policy for AI service provider with API key or cloud credentials.
 * Rate Limiting for LLM workload is based on tokens, we extend envoy gateway to support generic cost based rate limiting.
 
 ## Goals
@@ -266,8 +266,8 @@ OIDCExchangeToken *AWSOIDCExchangeToken `json:"oidcExchangeToken,omitempty"`
 ### Token Usage Rate Limiting
 
 AI Gateway project extended the envoy gateway `BackendTrafficPolicy` with a generic usage based rate limiting in [#4957](https://github.com/envoyproxy/gateway/pull/4957).
-For supporting token usage based rate limiting, we configure `hits_addend` in the response path to allow reducing the counter based on the response content that affects the subsequent requests.
-The token usages are extracted from the standard token usage fields according to then OpenAI schema in the ext proc `processResponseBody` handler.
+For supporting token usage based rate limiting, we reduce the rate limit counter in the response path. Since the reduction happens after the response is complete, the rate limiting is not enforced for the current but the subsequent requests.
+The token usages are extracted from the standard token usage fields according to the OpenAI schema in the ext proc `processResponseBody` handler.
 
 The AI gateway ext proc includes an envoy rate limiting service client to reduce the counter based on the LLM inference responses. The rate limiting server configuration is updated dynamically via xDS
 whenever the rate limiting rules are changed.
@@ -369,6 +369,7 @@ Limit RateLimitValue `json:"limit"`
 // +optional
 // +notImplementedHide
 Cost *RateLimitCost `json:"cost,omitempty"`
+}
 ```
 
 ### Yaml Examples
