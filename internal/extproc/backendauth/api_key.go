@@ -3,6 +3,7 @@ package backendauth
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
@@ -20,7 +21,7 @@ func newAPIKeyHandler(auth *filterconfig.APIKeyAuth) (Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read api key file: %w", err)
 	}
-	return &apiKeyHandler{apiKey: string(secret)}, nil
+	return &apiKeyHandler{apiKey: strings.TrimSpace(string(secret))}, nil
 }
 
 // Do implements [Handler.Do].

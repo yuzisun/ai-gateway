@@ -17,7 +17,7 @@ func TestNewAPIKeyHandler(t *testing.T) {
 	f, err := os.Create(apiKeyFile)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, f.Close()) }()
-	_, err = f.WriteString("test")
+	_, err = f.WriteString(" test \n")
 	require.NoError(t, err)
 	require.NoError(t, f.Sync())
 
@@ -25,6 +25,8 @@ func TestNewAPIKeyHandler(t *testing.T) {
 	handler, err := newAPIKeyHandler(&auth)
 	require.NoError(t, err)
 	require.NotNil(t, handler)
+	// apiKey should be trimmed.
+	require.Equal(t, "test", handler.(*apiKeyHandler).apiKey)
 }
 
 func TestApiKeyHandler_Do(t *testing.T) {
