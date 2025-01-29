@@ -91,53 +91,175 @@ The `HTTPRoute` handles upstream routing once backend is selected using the inje
 
 
 ```golang
+// AIGatewayRouteSpec details the AIGatewayRoute configuration.
+type AIGatewayRouteSpec struct {
+// TargetRefs are the names of the Gateway resources this AIGatewayRoute is being attached to.
+//
+// +kubebuilder:validation:MinItems=1
+// +kubebuilder:validation:MaxItems=128
+TargetRefs []gwapiv1a2.LocalPolicyTargetReferenceWithSectionName `json:"targetRefs"`
+// APISchema specifies the API schema of the input that the target Gateway(s) will receive.
+// Based on this schema, the ai-gateway will perform the necessary transformation to the
+// output schema specified in the selected AIServiceBackend during the routing process.
+//
+// Currently, the only supported schema is OpenAI as the input schema.
+//
+// +kubebuilder:validation:Required
+// +kubebuilder:validation:XValidation:rule="self.name == 'OpenAI'"
+APISchema VersionedAPISchema `json:"schema"`
+// Rules is the list of AIGatewayRouteRule that this AIGatewayRoute will match the traffic to.
+// Each rule is a subset of the HTTPRoute in the Gateway API (https://gateway-api.sigs.k8s.io/api-types/httproute/).
+//
+// AI Gateway controller will generate a HTTPRoute based on the configuration given here with the additional
+// modifications to achieve the necessary jobs, notably inserting the AI Gateway filter responsible for
+// the transformation of the request and response, etc.
+//
+// In the matching conditions in the AIGatewayRouteRule, `x-ai-eg-model` header is available
+// if we want to describe the routing behavior based on the model name. The model name is extracted
+// from the request content before the routing decision.
+//
+// How multiple rules are matched is the same as the Gateway API. See for the details:
+// https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io%2fv1.HTTPRoute
+//
+// +kubebuilder:validation:Required
+// +kubebuilder:validation:MaxItems=128
+Rules []AIGatewayRouteRule `json:"rules"`
 
+// FilterConfig is the configuration for the AI Gateway filter inserted in the generated HTTPRoute.
+//
+// An AI Gateway filter is responsible for the transformation of the request and response
+// as well as the routing behavior based on the model name extracted from the request content, etc.
+//
+// Currently, the filter is only implemented as an external process filter, which might be
+// extended to other types of filters in the future. See https://github.com/envoyproxy/ai-gateway/issues/90
+FilterConfig *AIGatewayFilterConfig `json:"filterConfig,omitempty"`
+
+// LLMRequestCosts specifies how to capture the cost of the LLM-related request, notably the token usage.
+// The AI Gateway filter will capture each specified number and store it in the Envoy's dynamic
+// metadata per HTTP request. The namespaced key is "io.envoy.ai_gateway",
+//
+// For example, let's say we have the following LLMRequestCosts configuration:
+//
+//	llmRequestCosts:
+//	- metadataKey: llm_input_token
+//	  type: InputToken
+//	- metadataKey: llm_output_token
+//	  type: OutputToken
+//	- metadataKey: llm_total_token
+//	  type: TotalToken
+//
+// Then, with the following BackendTrafficPolicy of Envoy Gateway, you can have three
+// rate limit buckets for each unique x-user-id header value. One bucket is for the input token,
+// the other is for the output token, and the last one is for the total token.
+// Each bucket will be reduced by the corresponding token usage captured by the AI Gateway filter.
+//
+// +optional
+// +kubebuilder:validation:MaxItems=36
+LLMRequestCosts []LLMRequestCost `json:"llmRequestCosts,omitempty"`
+}
+
+// AIGatewayRouteRule is a rule that defines the routing behavior of the AIGatewayRoute.
+type AIGatewayRouteRule struct {
+// BackendRefs is the list of AIServiceBackend that this rule will route the traffic to.
+// Each backend can have a weight that determines the traffic distribution.
+//
+// The namespace of each backend is "local", i.e. the same namespace as the AIGatewayRoute.
+//
+// +optional
+// +kubebuilder:validation:MaxItems=128
+BackendRefs []AIGatewayRouteRuleBackendRef `json:"backendRefs,omitempty"`
+
+// Matches is the list of AIGatewayRouteMatch that this rule will match the traffic to.
+// This is a subset of the HTTPRouteMatch in the Gateway API. See for the details:
+// https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io%2fv1.HTTPRouteMatch
+//
+// +optional
+// +kubebuilder:validation:MaxItems=128
+Matches []AIGatewayRouteRuleMatch `json:"matches,omitempty"`
+}
 ```
 
 
-### LLMBackend
+### AIServiceBackend
 
-`LLMBackend` defines the LLM provider API schema and a reference to the envoy gateway backend
+`AIServiceBackend` defines the AI service provider API schema and a reference to the envoy gateway backend
 
-- The Gateway routes the traffic to the appropriate `LLMBackend` by converting the unified API schema to the LLM provider API schema.
-- The LLMBackend is attached with the `BackendSecurityPolicy` to perform the upstream authentication.
+- The Gateway routes the traffic to the appropriate `AIServiceBackend` by converting the unified API schema to the AI service provider API schema.
+- The `AIServiceBackend` is attached with the `BackendSecurityPolicy` to perform the upstream authentication.
 
 ```golang
-// LLMBackendSpec details the LLMBackend configuration.
-type LLMBackendSpec struct {
+// AIServiceBackendSpec details the AIServiceBackend configuration.
+type AIServiceBackendSpec struct {
 // APISchema specifies the API schema of the output format of requests from
-// Envoy that this LLMBackend can accept as incoming requests.
+// Envoy that this AIServiceBackend can accept as incoming requests.
 // Based on this schema, the ai-gateway will perform the necessary transformation for
-// the pair of LLMRouteSpec.APISchema and LLMBackendSpec.APISchema.
+// the pair of AIGatewayRouteSpec.APISchema and AIServiceBackendSpec.APISchema.
 //
 // This is required to be set.
 //
 // +kubebuilder:validation:Required
-APISchema LLMAPISchema `json:"outputSchema"`
-// BackendRef is the reference to the Backend resource that this LLMBackend corresponds to.
+APISchema VersionedAPISchema `json:"schema"`
+// BackendRef is the reference to the Backend resource that this AIServiceBackend corresponds to.
 //
 // A backend can be of either k8s Service or Backend resource of Envoy Gateway.
 //
 // This is required to be set.
 //
 // +kubebuilder:validation:Required
-BackendRef egv1a1.BackendRef `json:"backendRef"`
+BackendRef gwapiv1.BackendObjectReference `json:"backendRef"`
+
+// BackendSecurityPolicyRef is the name of the BackendSecurityPolicy resources this backend
+// is being attached to.
+//
+// +optional
+BackendSecurityPolicyRef *gwapiv1.LocalObjectReference `json:"backendSecurityPolicyRef,omitempty"`
 }
 ```
 
-### LLMSecurityPolicy
+### BackendSecurityPolicy
+The `BeckendSecurityPolicy` defines the authentication methods with the upstream AI service provider. `APIKey` provides a simple authentication method to
+authenticate with upstream AI service providers such as OpenAI or Anthropic. For accessing models via cloud providers such as AWS, GCP, the cloud credential is managed with Kubernetes secrets or exchanged
+using OIDC federation.
 
 ```golang
-// LLMSecurityPolicySpec specifies a provider (e.g.AWS Bedrock, Azure etc.) specific-configuration like auth
-type LLMSecurityPolicySpec struct {
-// Type specifies the type of the provider. Currently, only "APIKey" and "AWS_IAM" are supported.
+// BackendSecurityPolicySpec specifies authentication rules on access the provider from the Gateway.
+// Only one mechanism to access a backend(s) can be specified.
 //
-// +kubebuilder:validation:Enum=APIKey;AWS_IAM
-Type AuthenticationType `json:"type"`
+// Only one type of BackendSecurityPolicy can be defined.
+// +kubebuilder:validation:MaxProperties=2
+type BackendSecurityPolicySpec struct {
+// Type specifies the auth mechanism used to access the provider. Currently, only "APIKey", AND "AWSCredentials" are supported.
+//
+// +kubebuilder:validation:Enum=APIKey;AWSCredentials
+Type BackendSecurityPolicyType `json:"type"`
 
-// APIKey specific configuration. The API key will be injected into the Authorization header.
+// APIKey is a mechanism to access a backend(s). The API key will be injected into the Authorization header.
+//
 // +optional
-APIKey *LLMProviderAPIKey `json:"apiKey,omitempty"`
+APIKey *BackendSecurityPolicyAPIKey `json:"apiKey,omitempty"`
+
+// AWSCredentials is a mechanism to access a backend(s). AWS specific logic will be applied.
+//
+// +optional
+AWSCredentials *BackendSecurityPolicyAWSCredentials `json:"awsCredentials,omitempty"`
+}
+// BackendSecurityPolicyAWSCredentials contains the supported authentication mechanisms to access aws
+type BackendSecurityPolicyAWSCredentials struct {
+// Region specifies the AWS region associated with the policy.
+//
+// +kubebuilder:validation:MinLength=1
+Region string `json:"region"`
+
+// CredentialsFile specifies the credentials file to use for the AWS provider.
+//
+// +optional
+CredentialsFile *AWSCredentialsFile `json:"credentialsFile,omitempty"`
+
+// OIDCExchangeToken specifies the oidc configurations used to obtain an oidc token. The oidc token will be
+// used to obtain temporary credentials to access AWS.
+//
+// +optional
+OIDCExchangeToken *AWSOIDCExchangeToken `json:"oidcExchangeToken,omitempty"`
 }
 ```
 
@@ -251,49 +373,95 @@ Cost *RateLimitCost `json:"cost,omitempty"`
 
 ### Yaml Examples
 
-#### LLMRoute
-The routing calculation in done in the `ExtProc` by analyzing the match rules on `LLMRoute` spec to emulate the behavior in order to perform the provider specific request/response transformation,
+#### AIGatewayRoute
+The routing calculation in done in the `ExtProc` by analyzing the match rules on `AIGatewayRoute` spec to emulate the behavior in order to perform the provider specific transformation and authentication,
 because the routing decision is made at the very end of the filter chain.
 
 ```yaml
 apiVersion: aigateway.envoyproxy.io/v1alpha1
-kind: LLMRoute
+kind: AIGatewayRoute
 metadata:
-  name: gateway-route
+  name: llmroute
+  namespace: ai-gateway
 spec:
-  inputSchema:
-    schema: OpenAI
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: eg
+  schema:
+    name: OpenAI
   rules:
-    matches:
-      - headers:
-          key: x-envoy-ai-gateway-llm-model
-          value: llama3-70b
-        backendRefs:
-        - name: kserve-backend
-          weight: 20
-        - name: aws-bedrock-backend
-          weight: 80
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-gateway-llm-backend
+              value: awsbedrock-backend
+      backendRefs:
+        - name: awsbedrock-backend
+          weight: 100
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-gateway-llm-backend
+              value: kserve-llama-backend
+      backendRefs:
+        - name: kserve-llama-backend
+          weight: 100
+  filterConfig:
+    externalProcess:
+      replicas: 1
 ```
 
-#### LLMBackend
+#### AIServiceBackend
 ```yaml
 apiVersion: aigateway.envoyproxy.io/v1alpha1
-kind: LLMBackend
+kind: AIServiceBackend
 metadata:
-  name: kserve
+  name: awsbedrock-backend
+  namespace: ai-gateway
 spec:
-  outputSchema: OpenAI
-  backendRef: kserve-backend
-  backendSecurityPolicyName: jwt
+  schema:
+    name: "AWSBedrock"
+  backendRef:
+    group: "gateway.envoyproxy.io"
+    kind: "Backend"
+    name: "llm-bedrock-backend"
 ---
 apiVersion: aigateway.envoyproxy.io/v1alpha1
-kind: LLMBackend
+kind: AIServiceBackend
 metadata:
-  name: aws-bedrock-llama-3
+  name: kserve-llama-backend
+  namespace: ai-gateway
 spec:
-  outputSchema: AWSBedrock
-  backendRef: aws-bedrock-backend
-  backendSecurityPolicyName: aws-oidc
+  schema:
+    name: "OpenAI"
+  backendRef:
+    group: "gateway.envoyproxy.io"
+    kind: "Backend"
+    name: "kserve-llama-backend"
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: kserve-llama-backend
+  namespace: ai-gateway
+spec:
+  endpoints:
+    - fqdn:
+        hostname: llama-3-1-70b-instruct-vllm.example.com
+        port: 443
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: llm-bedrock-backend
+  namespace: ai-gateway
+spec:
+  endpoints:
+    - fqdn:
+        hostname: bedrock-runtime.us-east-1.amazonaws.com
+        port: 443
+
 ```
 
 #### BackendTrafficPolicy
@@ -304,6 +472,11 @@ kind: BackendTrafficPolicy
 metadata:
   name: llama-ratelimit
 spec:
+  # Applies the rate limit policy to the gateway.
+  targetRefs:
+    - name: eg
+      kind: Gateway
+      group: gateway.networking.k8s.io
   rateLimit:
     type: Global
     global:
@@ -315,14 +488,15 @@ spec:
           - name: x-user-id
             type: Distinct
         limit:
+          # configure the number of allowed token per minute, per user and model
           requests: 1000
           unit: Minute
         cost:
           response:
+            from: Metadata
             metadata:
-              namespace: "llm.ratelimit"
-              key: "ai_gateway_filter.token_usage"
-
+              namespace: "io.envoy.ai_gateway"
+              key: "ai_gateway_filter.llm_input_token"
 ```
 
 ## Diagrams
@@ -333,13 +507,12 @@ custom resources and then calls a set of hooks that allow the generated xDS conf
 
 ![Data Plane](./control_plane.png)
 
-AI Gateway ExtProc controller watches the `LLMRoute` resource and perform the follow steps:
+AI Gateway ExtProc controller watches the `AIGatewayRoute` resource and perform the follow steps:
 - Reconciles the envoy gateway ext proc deployment and creates the extension policy.
 - Reconciles the envoy proxy deployment and attach the AWS credential if the provider is AWS.
-- Reconciles `LLMRoute` to calculate the routing rules and generates the `HTTPRoute` resource applying the extension filter.
+- Reconciles `AIGatewayRoute` to calculate the routing rules and generates the `HTTPRoute` resource applying the extension filter.
 
-AI Gateway extension server also watches the `LLMRoute`, `LLMSecurityPolicy` and `BackendTrafficPolicy` to dynamically update the xDS
-configuration for the rate limiting filter and aws signing filter.
+Envoy Gateway controller watches the `BackendTrafficPolicy` to dynamically update the xDS configuration for the rate limiting filter.
 
 ### Data Plane
 
@@ -359,9 +532,9 @@ The flow can be described as:
 - Rate limiting is applied for request based usage tracking.
 - Provider authentication policy is applied based on the AI provider
   - API key is injected to the request headers for the provider supporting API keys.
-  - AWS signing filter is applied for authenticating with AWS Bedrock service if the backend is targeted to AWS
-- Routing rule is applied to route the request to the specified or calculated destination.
-- Upon receiving the response from AI provider, the token usage is reduced by extracting the usage fields according to OpenAI schema.
+  - AWS requests are signed by ExtProc and credentials are injected for authenticating with AWS Bedrock service if the backend is targeted to AWS
+- Request is routed by the envoy proxy to the specified or calculated destination.
+- Upon receiving the response from AI provider, the token usage is reduced by extracting the usage fields.
   - the rate limit is enforced on the subsequent request.
 
 
