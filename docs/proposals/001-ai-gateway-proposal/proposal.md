@@ -18,8 +18,6 @@
     -   [BackendSecurityPolicy](#backendsecuritypolicy)
     -   [Token Usage based Rate Limiting](#token-usage-rate-limiting)
     -   [Diagrams](#diagrams)
-- [FAQ](#faq)
-- [Open Questions](#open-questions)
 
 <!-- /toc -->
 
@@ -441,7 +439,7 @@ AWS credential is used to authenticate with AWS Bedrock service.
 apiVersion: aigateway.envoyproxy.io/v1alpha1
 kind: BackendSecurityPolicy
 metadata:
-  name: aws-bedrock-policy
+  name: aws-bedrock-credential
   namespace: default
 spec:
   type: AWSCredentials
@@ -455,7 +453,7 @@ spec:
 apiVersion: aigateway.envoyproxy.io/v1alpha1
 kind: BackendSecurityPolicy
 metadata:
-  name: openai-policy
+  name: openai-ai-key
   namespace: default
 spec:
   type: APIKey
@@ -479,6 +477,10 @@ spec:
     group: "gateway.envoyproxy.io"
     kind: "Backend"
     name: "llm-bedrock-backend"
+  BackendSecurityPolicyRef:
+    group: "aigateway.envoyproxy.io"
+    kind: "BackendSecurityPolicy"
+    name: "aws-bedrock-credential"
 ---
 apiVersion: aigateway.envoyproxy.io/v1alpha1
 kind: AIServiceBackend
@@ -495,7 +497,7 @@ spec:
   BackendSecurityPolicyRef:
     group: "aigateway.envoyproxy.io"
     kind: "BackendSecurityPolicy"
-    name: "kserve-llama-backend"
+    name: "openai-ai-key"
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: Backend
@@ -583,21 +585,13 @@ This diagram lightly follows the example request for routing to Anthropic claude
 The flow can be described as:
 - The request comes in to envoy AI gateway(Ext-Proc).
 - Ext Authorization filter is applied for checking if the user or account is authorized to access the model.
-- ExtProc looks up the model name claude-3.5-sonnet from the request and inject the request header `x-ai-gateway-llm-model-name`.
-- ExtProc extracts the request header `x-ai-gateway-llm-backend` or calculate the rules to determine the backend.
+- ExtProc calculates the routing destination by matching request headers such as model name and inject the routing header `x-ai-gateway-llm-model-name`.
 - ExtProc translates the user inference request (OpenAI) to the data schema according to the AI provider.
 - Rate limiting is applied for request based usage tracking.
 - Provider authentication policy is applied based on the AI provider
   - API key is injected to the request headers for the provider supporting API keys.
   - AWS requests are signed by ExtProc and credentials are injected for authenticating with AWS Bedrock service if the backend is targeted to AWS
 - Request is routed by the envoy proxy to the specified or calculated destination.
-- Upon receiving the response from AI provider, the token usage is reduced by extracting the usage fields.
+- Upon receiving the response from AI provider, the token usage limit is reduced by extracting the usage fields of chat completion response.
   - the rate limit is enforced on the subsequent request.
-
-
-## FAQ
-
-
-
-## Open Questions
 
