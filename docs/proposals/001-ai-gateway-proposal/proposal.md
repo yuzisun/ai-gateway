@@ -19,25 +19,25 @@
 <!-- /toc -->
 
 ## Summary
-The AI Gateway project is to act as a centralized access point for managing and controlling access to various AI models within an organization.
+The `Envoy AI Gateway` is to act as a centralized access point for managing and controlling access to various AI models within an organization.
 It provides a single interface for developers to interact with different AI Services while ensuring security, governance and observability over AI traffic.
 
-This proposal introduces new Custom Resource Definitions(CRD) to support the requirements of the `Envoy AI Gateway`: **AIGatewayRoute**, **AIServiceBackend** and **BackendSecurityPolicy**.
+It introduces new Custom Resource Definitions(CRD) to support the requirements of the `Envoy AI Gateway`: **AIGatewayRoute**, **AIServiceBackend** and **BackendSecurityPolicy**.
 
 * The `AIGatewayRoute` specifies the schema for the user requests and routing rules to the `AIServiceBackend`s.
 * The `AIServiceBackend` defines the AI service backend schema and security policy for various AI Services. This resource is managed by the Inference Platform Admin persona.
-* The `BackendSecurityPolicy` defines the authentication policy for AI services with API key or cloud credentials.
-* Rate Limiting for LLM workload is based on tokens, we extend `Envoy Gateway` to support generic cost based rate limiting.
+* The `BackendSecurityPolicy` defines the authentication policy for upstream AI services using API key or cloud credentials.
+* Rate Limiting for LLM workload is based on tokens, we extend `Envoy Gateway` to support generic cost based rate limiting as envoy so far only supports request based rate limiting.
 
 ## Goals
 
-- Drive the consensus on the `Envoy AI Gateway` API for the MVP features
+- Drive the consensus on the `Envoy AI Gateway` API for the MVP features:
   - Upstream Model Access: Support accessing models from an initial list of AI Services: AWS Bedrock, OpenAI.
   - Unified Client Access: Support a unified AI gateway API across AI Services.
-  - Traffic Management: Monitor and regulate AI usage, including token rate limiting and cost optimization by tracking API calls and model usage.
+  - Traffic Management: Monitor and regulate AI service traffic, including token rate limiting by tracking token usages for LLM models.
   - Observability: Provide detailed insights into usage patterns, performance and potential issues through logging and metrics collection.
   - Policy Enforcement: Allow organizations to set specific rules and guidelines for how AI models can be accessed and used.
-- Documentation of API decisions for posterity
+- Documentation of API decisions for posterity.
 
 ## Non-Goals
 
@@ -54,13 +54,13 @@ Before diving into the details of the API, descriptions of the personas will hel
 
 The Inference Platform Admin manages the gateway infrastructure necessary to route inference requests to a variety of AI Services.
 Including handling Ops for:
-  - A list of AI Services and supported models
+  - A list of AI Services and supported models.
   - AI Services API schema conversion and centralized upstream authentication configurations.
   - Traffic policy including rate limiting, fallback resilience between AI Service backends.
 
 #### Payment Team
 
-- Reports the per user/tenant LLM token usage for billing purpose.
+- Reports per user/tenant/model LLM token usage for billing purpose.
 
 #### Security Team
 
@@ -72,7 +72,7 @@ The API design is based on these axioms:
 
 - This solution should be composable with other Gateway solutions.
 - Gateway architecture should be extensible when customization is required.
-- The MVP heavily assumes that the requests are done using the OpenAI spec, but open to the extension in the future.
+- The MVP heavily assumes that the requests are sent using the OpenAI spec, but open to the extension in the future.
 
 
 ### AIGatewayRoute
@@ -81,8 +81,7 @@ The API design is based on these axioms:
 
 - `AIGatewayRoute` serves as a way to define the unified AI Gateway API which allows downstream clients to use a single schema API to interact with multiple `AIServiceBackend`s.
 - `AIGatewayRoute`s are defined to route to the `AIServiceBackend`s based on the HTTP header/path matching. The rules are matched in the `Envoy AI Gateway` external proc as the backend needs to be determined for request body transformation and upstream authentication.
-The `HTTPRoute` handles upstream routing once backend is selected using the injected ai gateway routing header.
-- `BackendTrafficPolicy` is referenced to perform other necessary jobs for upstream authentication and rate limiting.
+The `HTTPRoute` handles upstream routing once backend is selected using the AI gateway routing header.
 
 
 ```golang
@@ -194,9 +193,9 @@ CELExpression string `json:"celExpression,omitempty"`
 
 ### AIServiceBackend
 
-`AIServiceBackend` defines the AI service provider API schema and a reference to the `Envoy Gateway` backend
+`AIServiceBackend` defines the AI service API schema and a reference to the `Envoy Gateway` backend for the target destination.
 
-- The Gateway routes the traffic to the appropriate `AIServiceBackend` by converting the unified API schema to the AI service provider API schema.
+- The Gateway routes the traffic to the appropriate `AIServiceBackend` by converting the unified API schema to the AI service API schema.
 - The `AIServiceBackend` is attached with the `BackendSecurityPolicy` to perform the upstream authentication.
 
 ```golang
@@ -229,7 +228,7 @@ BackendSecurityPolicyRef *gwapiv1.LocalObjectReference `json:"backendSecurityPol
 ```
 
 ### BackendSecurityPolicy
-The `BeckendSecurityPolicy` defines the authentication methods with the upstream AI service provider. `APIKey` provides a simple authentication method to
+The `BeckendSecurityPolicy` defines the authentication methods of the upstream AI service. `APIKey` provides a simple authentication method to
 authenticate with upstream AI services such as OpenAI or Anthropic. For accessing models via cloud providers such as AWS, GCP, the cloud credential is managed with Kubernetes secrets or exchanged
 using OIDC federation.
 
@@ -278,7 +277,7 @@ OIDCExchangeToken *AWSOIDCExchangeToken `json:"oidcExchangeToken,omitempty"`
 ### Token Usage Rate Limiting
 
 AI Gateway project extended the `Envoy Gateway` `BackendTrafficPolicy` with a generic usage based rate limiting in [#4957](https://github.com/envoyproxy/gateway/pull/4957).
-For supporting token usage based rate limiting, we reduce the rate limit counter in the response path. Since the reduction happens after the response is complete, the rate limiting is not enforced for the current but the subsequent requests.
+For supporting token usage based rate limiting, it reduces the rate limit counter in the response path. Since the reduction happens after the response is complete, the rate limiting is not enforced for the current but the subsequent requests.
 The token usages are extracted from the standard token usage fields according to the OpenAI schema in the ext proc `processResponseBody` handler.
 
 ```go
@@ -384,7 +383,7 @@ Cost *RateLimitCost `json:"cost,omitempty"`
 ### Yaml Examples
 
 #### AIGatewayRoute
-The routing calculation in done in the `ExtProc` by analyzing the match rules on `AIGatewayRoute` spec to emulate the behavior in order to perform the provider specific transformation and authentication before the routing filter is applied,
+The routing calculation in done in the `ExtProc` by analyzing the match rules on `AIGatewayRoute` spec to emulate the behavior in order to perform the AI Service specific transformation and authentication before the routing filter is applied,
  because it happens at the very end of the filter chain.
 
 The `AIServiceBackend` rules are specified on the `AIGatewayRoute` based on model header matching, in this example `anthropic.claude-3-5-sonnet` is routed to the AWS Bedrock and `llama-3.3-70b-instruction` is routed to the KServe backend for the self-hosted llama model.
@@ -428,8 +427,8 @@ spec:
 ```
 
 #### BackendSecurityPolicy
-`BackendSecurityPolicy` specifies the API key or credentials that `Envoy AI Gateway` uses to authenticate with the upstream provider. In this example API key is used to authenticate with OpenAI service and
-AWS credential is used to authenticate with AWS Bedrock service.
+`BackendSecurityPolicy` specifies the API key or credentials that `Envoy AI Gateway` uses to authenticate with the upstream AI service.
+In this example API key is used to authenticate with OpenAI service and AWS credential is used to authenticate with AWS Bedrock service.
 ```yaml
 apiVersion: aigateway.envoyproxy.io/v1alpha1
 kind: BackendSecurityPolicy
@@ -458,7 +457,7 @@ spec:
 ```
 
 #### AIServiceBackend
-Based on the gateway routes, we define the AWS Bedrock and KServe `AIServiceBackend` along with the `Envoy Gateway` backend resource with the FQDN for the routing destination.
+Based on the gateway routes, we define the AWS Bedrock and KServe `AIServiceBackend` along with the `Envoy Gateway` backend resource using the FQDN for the routing destination.
 ```yaml
 apiVersion: aigateway.envoyproxy.io/v1alpha1
 kind: AIServiceBackend
