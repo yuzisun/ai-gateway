@@ -7,7 +7,7 @@
 -   [Summary](#summary)
 -   [Goals](#goals)
 -   [Non-Goals](#non-goals)
--   [Proposal](#proposal)
+-   [Design](#design)
     -   [Personas](#personas)
     -   [Axioms](#axioms)
     -   [AIGatewayRoute](#aigatewayroute)
@@ -30,21 +30,21 @@ It introduces new Custom Resource Definitions(CRD) to support the requirements o
 * Rate Limiting for LLM workload is based on tokens, we extend `Envoy Gateway` to support generic cost based rate limiting as envoy so far only supports request based rate limiting.
 
 ## Goals
-
-- Drive the consensus on the `Envoy AI Gateway` API for the MVP features:
+- Documentation of the 0.1 API decisions for posterity.
+- Document `Envoy AI Gateway` MVP features:
   - Upstream Model Access: Support accessing models from an initial list of AI Services: AWS Bedrock, OpenAI.
   - Unified Client Access: Support a unified AI gateway API across AI Services.
   - Traffic Management: Monitor and regulate AI service traffic, including token rate limiting by tracking token usages for LLM models.
   - Observability: Provide detailed insights into usage patterns, performance and potential issues through logging and metrics collection.
   - Policy Enforcement: Allow organizations to set specific rules and guidelines for how AI models can be accessed and used.
-- Documentation of API decisions for posterity.
+
 
 ## Non-Goals
 
 - non-MVP features
 - Routing for LLM serving instances in a Kubernetes cluster
 
-## Proposal
+## Design
 
 ### Personas
 
