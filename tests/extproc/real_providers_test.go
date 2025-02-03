@@ -270,7 +270,7 @@ func TestWithRealProviders(t *testing.T) {
 					secondChatCompletion, err := client.Chat.Completions.New(context.Background(), openai.ChatCompletionNewParams{
 						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
 							openai.UserMessage("What is the weather like in Paris today?"),
-							openai.FunctionResponse("get_weather", toolResponse),
+							openai.UserMessage("get_weather", toolResponse),
 						}),
 						Model: openai.F(tc.modelName),
 					})
