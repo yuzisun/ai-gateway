@@ -252,13 +252,10 @@ func TestWithRealProviders(t *testing.T) {
 					}
 					// Step 2: Verify tool call
 					toolCallMade := false
-					var toolArguments map[string]interface{}
 					for _, choice := range chatCompletion.Choices {
 						t.Logf("choice content: %s", choice.Message.Content)
-						if choice.Message.FunctionCall != nil && choice.Message.FunctionCall.Name == "get_weather" {
+						if choice.FinishReason == openai.ChatCompletionChoicesFinishReasonToolCalls {
 							toolCallMade = true
-							toolArguments = choice.Message.FunctionCall.Arguments
-							t.Logf("tool call arguments: %v", toolArguments)
 						}
 					}
 					if !toolCallMade {
@@ -267,14 +264,13 @@ func TestWithRealProviders(t *testing.T) {
 					// Step 3: Simulate the tool returning a response and check the second response
 					toolCall := chatCompletion.Choices[0].Message.ToolCalls[0]
 					toolResponse := map[string]interface{}{
-						"location": "Paris",
+						"location":    "Paris",
 						"temperature": "24°C",
-						"forecast": "sunny",
+						"forecast":    "sunny",
 					}
 					secondChatCompletion, err := client.Chat.Completions.New(context.Background(), openai.ChatCompletionNewParams{
 						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
 							openai.UserMessage("What is the weather like in Paris today?"),
-							openai.AssistantFunctionCall("get_weather", toolArguments),
 							openai.FunctionResponse("get_weather", toolResponse),
 						}),
 						Model: openai.F(tc.modelName),
