@@ -211,7 +211,7 @@ func TestWithRealProviders(t *testing.T) {
 		}
 	})
 
-	t.Run("Bedrock calls tool get_weather function", func(t *testing.T) {
+	t.Run("Bedrock uses tool in response", func(t *testing.T) {
 		client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
 		for _, tc := range []struct {
 			testCaseName,
@@ -221,6 +221,7 @@ func TestWithRealProviders(t *testing.T) {
 		} {
 			t.Run(tc.modelName, func(t *testing.T) {
 				require.Eventually(t, func() bool {
+					// Step 1: Initial tool call request
 					chatCompletion, err := client.Chat.Completions.New(context.Background(), openai.ChatCompletionNewParams{
 						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
 							openai.UserMessage("What is the weather like in Paris today?"),
@@ -249,16 +250,48 @@ func TestWithRealProviders(t *testing.T) {
 						t.Logf("error: %v", err)
 						return false
 					}
-					returnsToolCall := false
+					// Step 2: Verify tool call
+					toolCallMade := false
+					var toolArguments map[string]interface{}
 					for _, choice := range chatCompletion.Choices {
 						t.Logf("choice content: %s", choice.Message.Content)
-						t.Logf("finish reason: %s", choice.FinishReason)
-						t.Logf("choice toolcall: %v", choice.Message.ToolCalls)
-						if choice.FinishReason == openai.ChatCompletionChoicesFinishReasonToolCalls {
-							returnsToolCall = true
+						if choice.Message.FunctionCall != nil && choice.Message.FunctionCall.Name == "get_weather" {
+							toolCallMade = true
+							toolArguments = choice.Message.FunctionCall.Arguments
+							t.Logf("tool call arguments: %v", toolArguments)
 						}
 					}
-					return returnsToolCall
+					if !toolCallMade {
+						return false
+					}
+					// Step 3: Simulate the tool returning a response and check the second response
+					toolCall := chatCompletion.Choices[0].Message.ToolCalls[0]
+					toolResponse := map[string]interface{}{
+						"location": "Paris",
+						"temperature": "24°C",
+						"forecast": "sunny",
+					}
+					secondChatCompletion, err := client.Chat.Completions.New(context.Background(), openai.ChatCompletionNewParams{
+						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
+							openai.UserMessage("What is the weather like in Paris today?"),
+							openai.AssistantFunctionCall("get_weather", toolArguments),
+							openai.FunctionResponse("get_weather", toolResponse),
+						}),
+						Model: openai.F(tc.modelName),
+					})
+					if err != nil {
+						t.Logf("error during second response: %v", err)
+						return false
+					}
+					// Step 4: Verify that the second response is correct
+					returnsCompletionWithToolResponse := false
+					for _, choice := range secondChatCompletion.Choices {
+						t.Logf("second response content: %s", choice.Message.Content)
+						if choice.Message.Content == "The weather in Paris is currently sunny and 24°C." {
+							returnsCompletionWithToolResponse = true
+						}
+					}
+					return returnsCompletionWithToolResponse
 				}, 10*time.Second, 500*time.Millisecond)
 			})
 		}
