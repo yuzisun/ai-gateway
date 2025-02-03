@@ -262,7 +262,6 @@ func TestWithRealProviders(t *testing.T) {
 						return false
 					}
 					// Step 3: Simulate the tool returning a response and check the second response
-					toolCall := chatCompletion.Choices[0].Message.ToolCalls[0]
 					toolResponse := map[string]interface{}{
 						"location":    "Paris",
 						"temperature": "24°C",
