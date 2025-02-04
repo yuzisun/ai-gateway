@@ -245,6 +245,7 @@ func TestWithRealProviders(t *testing.T) {
 								}),
 							},
 						}),
+						// TODO: check if we should seed.
 						Seed:  openai.Int(0),
 						Model: openai.F(tc.modelName),
 					}
@@ -254,6 +255,20 @@ func TestWithRealProviders(t *testing.T) {
 						return false
 					}
 					// Step 2: Verify tool call
+					// TODO: remove after test done
+					returnsToolCall := false
+					for _, choice := range completion.Choices {
+						t.Logf("choice content: %s", choice.Message.Content)
+						t.Logf("finish reason: %s", choice.FinishReason)
+						t.Logf("choice toolcall: %v", choice.Message.ToolCalls)
+						if choice.FinishReason == openai.ChatCompletionChoicesFinishReasonToolCalls {
+							returnsToolCall = true
+						}
+					}
+					if returnsToolCall == false {
+						t.Logf("Tool call not returned")
+						return false
+					}
 					toolCalls := completion.Choices[0].Message.ToolCalls
 					if len(toolCalls) == 0 {
 						t.Logf("Expected tool call from completion result but got none")
