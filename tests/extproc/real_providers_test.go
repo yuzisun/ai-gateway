@@ -222,9 +222,10 @@ func TestWithRealProviders(t *testing.T) {
 			t.Run(tc.modelName, func(t *testing.T) {
 				require.Eventually(t, func() bool {
 					// Step 1: Initial tool call request
-					chatCompletion, err := client.Chat.Completions.New(context.Background(), openai.ChatCompletionNewParams{
+					question := "What is the weather in New York City?"
+					params := openai.ChatCompletionNewParams{
 						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
-							openai.UserMessage("What is the weather like in Paris today?"),
+							openai.UserMessage(question),
 						}),
 						Tools: openai.F([]openai.ChatCompletionToolParam{
 							{
@@ -244,49 +245,55 @@ func TestWithRealProviders(t *testing.T) {
 								}),
 							},
 						}),
+						Seed:  openai.Int(0),
 						Model: openai.F(tc.modelName),
-					})
+					}
+					completion, err := client.Chat.Completions.New(context.Background(), params)
 					if err != nil {
 						t.Logf("error: %v", err)
 						return false
 					}
 					// Step 2: Verify tool call
-					toolCallMade := false
-					for _, choice := range chatCompletion.Choices {
-						t.Logf("choice content: %s", choice.Message.Content)
-						if choice.FinishReason == openai.ChatCompletionChoicesFinishReasonToolCalls {
-							toolCallMade = true
-						}
-					}
-					if !toolCallMade {
+					toolCalls := completion.Choices[0].Message.ToolCalls
+					if len(toolCalls) == 0 {
+						t.Logf("Expected tool call from completion result but got none")
 						return false
 					}
-					// Step 3: Simulate the tool returning a response and check the second response
-					toolResponse := map[string]interface{}{
-						"location":    "Paris",
-						"temperature": "24°C",
-						"forecast":    "sunny",
+					// Step 3: Simulate the tool returning a response, add the tool response to the params, and check the second response
+					params.Messages.Value = append(params.Messages.Value, completion.Choices[0].Message)
+					getWeatherCalled := false
+					for _, toolCall := range toolCalls {
+						if toolCall.Function.Name == "get_weather" {
+							getWeatherCalled = true
+							// Extract the location from the function call arguments
+							var args map[string]interface{}
+							if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
+								panic(err)
+							}
+							location := args["location"].(string)
+							if location != "New York City" {
+								t.Logf("Expected location to be New York City but got %s", location)
+							}
+							// Simulate getting weather data
+							weatherData := "Sunny, 25°C"
+							params.Messages.Value = append(params.Messages.Value, openai.ToolMessage(toolCall.ID, weatherData))
+						}
 					}
-					secondChatCompletion, err := client.Chat.Completions.New(context.Background(), openai.ChatCompletionNewParams{
-						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
-							openai.UserMessage("What is the weather like in Paris today?"),
-							openai.UserMessage("get_weather", toolResponse),
-						}),
-						Model: openai.F(tc.modelName),
-					})
+					if getWeatherCalled == false {
+						t.Logf("get_weather tool not specified in chat completion response")
+						return false
+					}
+
+					secondChatCompletion, err := client.Chat.Completions.New(context.Background(), params)
 					if err != nil {
 						t.Logf("error during second response: %v", err)
 						return false
 					}
+
 					// Step 4: Verify that the second response is correct
-					returnsCompletionWithToolResponse := false
-					for _, choice := range secondChatCompletion.Choices {
-						t.Logf("second response content: %s", choice.Message.Content)
-						if choice.Message.Content == "The weather in Paris is currently sunny and 24°C." {
-							returnsCompletionWithToolResponse = true
-						}
-					}
-					return returnsCompletionWithToolResponse
+					completionResult := secondChatCompletion.Choices[0].Message.Content
+					t.Logf("content of completion response using tool: %s", secondChatCompletion.Choices[0].Message.Content)
+					return completionResult == "The weather in Paris is currently sunny and 25°C."
 				}, 10*time.Second, 500*time.Millisecond)
 			})
 		}
