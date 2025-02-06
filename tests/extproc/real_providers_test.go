@@ -38,12 +38,12 @@ func TestWithRealProviders(t *testing.T) {
 	file, err := os.Create(apiKeyFilePath)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, file.Close()) }()
-	// openAIAPIKey := getEnvVarOrSkip(t, "TEST_OPENAI_API_KEY")
-	openAIAPIKey := ""
-
-	_, err = file.WriteString(openAIAPIKey)
-	require.NoError(t, err)
-	require.NoError(t, file.Sync())
+	openAIAPIKey := os.Getenv("TEST_OPENAI_API_KEY")
+	if openAIAPIKey != "" {
+		_, err = file.WriteString(openAIAPIKey)
+		require.NoError(t, err)
+		require.NoError(t, file.Sync())
+	}
 
 	// Set up credential file for AWS.
 	awsAccessKeyID := getEnvVarOrSkip(t, "TEST_AWS_ACCESS_KEY_ID")
@@ -51,7 +51,7 @@ func TestWithRealProviders(t *testing.T) {
 	awsSessionToken := os.Getenv("TEST_AWS_SESSION_TOKEN")
 	var awsCredentialsBody string
 	if awsSessionToken != "" {
-		awsCredentialsBody = fmt.Sprintf("[default]\nAWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\nTEST_AWS_SESSION_TOKEN=%s\n",
+		awsCredentialsBody = fmt.Sprintf("[default]\nAWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\nAWS_SESSION_TOKEN=%s\n",
 			awsAccessKeyID, awsSecretAccessKey, awsSessionToken)
 	} else {
 		awsCredentialsBody = fmt.Sprintf("[default]\nAWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n",
@@ -110,6 +110,9 @@ func TestWithRealProviders(t *testing.T) {
 			{testCaseName: "openai", modelName: "gpt-4o-mini"},                            // This will go to "openai"
 			{testCaseName: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0"}, // This will go to "aws-bedrock" using credentials file.
 		} {
+			if tc.testCaseName == "openai" && openAIAPIKey == "" {
+				t.Skip("Skipping openai test case as TEST_OPENAI_API_KEY is not set")
+			}
 			t.Run(tc.modelName, func(t *testing.T) {
 				require.Eventually(t, func() bool {
 					chatCompletion, err := client.Chat.Completions.New(context.Background(), openai.ChatCompletionNewParams{
@@ -179,6 +182,9 @@ func TestWithRealProviders(t *testing.T) {
 			{testCaseName: "openai", modelName: "gpt-4o-mini"},                            // This will go to "openai"
 			{testCaseName: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0"}, // This will go to "aws-bedrock" using credentials file.
 		} {
+			if tc.testCaseName == "openai" && openAIAPIKey == "" {
+				t.Skip("Skipping openai test case as TEST_OPENAI_API_KEY is not set")
+			}
 			t.Run(tc.modelName, func(t *testing.T) {
 				require.Eventually(t, func() bool {
 					stream := client.Chat.Completions.NewStreaming(context.Background(), openai.ChatCompletionNewParams{
@@ -294,8 +300,8 @@ func TestWithRealProviders(t *testing.T) {
 							getWeatherCalled = true
 							// Extract the location from the function call arguments
 							var args map[string]interface{}
-							if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
-								panic(err)
+							if argErr := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); argErr != nil {
+								panic(argErr)
 							}
 							location := args["location"].(string)
 							if location != "New York City" {
