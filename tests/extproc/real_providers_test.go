@@ -38,7 +38,9 @@ func TestWithRealProviders(t *testing.T) {
 	file, err := os.Create(apiKeyFilePath)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, file.Close()) }()
-	openAIAPIKey := getEnvVarOrSkip(t, "TEST_OPENAI_API_KEY")
+	// openAIAPIKey := getEnvVarOrSkip(t, "TEST_OPENAI_API_KEY")
+	openAIAPIKey := ""
+
 	_, err = file.WriteString(openAIAPIKey)
 	require.NoError(t, err)
 	require.NoError(t, file.Sync())
