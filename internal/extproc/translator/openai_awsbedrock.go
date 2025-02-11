@@ -558,6 +558,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 	if err = json.NewDecoder(body).Decode(&bedrockResp); err != nil {
 		return nil, nil, tokenUsage, fmt.Errorf("failed to unmarshal body: %w", err)
 	}
+	fmt.Printf("\nbedrock output message from converse: %v\n", len(bedrockResp.Output.Message.Content))
 
 	openAIResp := openai.ChatCompletionResponse{
 		Object:  "chat.completion",
@@ -577,6 +578,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 		}
 	}
 	for i, output := range bedrockResp.Output.Message.Content {
+		fmt.Printf("\nbedrock output message: i=%v, text=%v, toolResult=%v, toolUse=%v\n", i, *output.Text, output.ToolResult, output.ToolUse)
 		choice := openai.ChatCompletionResponseChoice{
 			Index: (int64)(i),
 			Message: openai.ChatCompletionResponseChoiceMessage{

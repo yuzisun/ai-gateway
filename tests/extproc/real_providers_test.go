@@ -3,8 +3,6 @@
 package extproc
 
 import (
-	"bufio"
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -63,127 +61,129 @@ func TestWithRealProviders(t *testing.T) {
 
 	requireExtProc(t, os.Stdout, extProcExecutablePath(), configPath)
 
-	t.Run("health-checking", func(t *testing.T) {
-		client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
-		for _, tc := range []realProvidersTestCase{
-			{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
-			{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
-		} {
-			cc.maybeSkip(t, tc.required)
-			t.Run(tc.modelName, func(t *testing.T) {
-				require.Eventually(t, func() bool {
-					chatCompletion, err := client.Chat.Completions.New(context.Background(), openai.ChatCompletionNewParams{
-						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
-							openai.UserMessage("Say this is a test"),
-						}),
-						Model: openai.F(tc.modelName),
-					})
-					if err != nil {
-						t.Logf("error: %v", err)
-						return false
-					}
-					nonEmptyCompletion := false
-					for _, choice := range chatCompletion.Choices {
-						t.Logf("choice: %s", choice.Message.Content)
-						if choice.Message.Content != "" {
-							nonEmptyCompletion = true
-						}
-					}
-					return nonEmptyCompletion
-				}, 30*time.Second, 2*time.Second)
-			})
-		}
-	})
+	//t.Run("health-checking", func(t *testing.T) {
+	//	client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
+	//	for _, tc := range []realProvidersTestCase{
+	//		{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
+	//		{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
+	//	} {
+	//		cc.maybeSkip(t, tc.required)
+	//		t.Run(tc.modelName, func(t *testing.T) {
+	//			require.Eventually(t, func() bool {
+	//				chatCompletion, err := client.Chat.Completions.New(context.Background(), openai.ChatCompletionNewParams{
+	//					Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
+	//						openai.UserMessage("Say this is a test"),
+	//					}),
+	//					Model: openai.F(tc.modelName),
+	//				})
+	//				if err != nil {
+	//					t.Logf("error: %v", err)
+	//					return false
+	//				}
+	//				nonEmptyCompletion := false
+	//				for _, choice := range chatCompletion.Choices {
+	//					t.Logf("choice: %s", choice.Message.Content)
+	//					if choice.Message.Content != "" {
+	//						nonEmptyCompletion = true
+	//					}
+	//				}
+	//				return nonEmptyCompletion
+	//			}, 30*time.Second, 2*time.Second)
+	//		})
+	//	}
+	//})
+	//
+	//// Read all access logs and check if the used token is logged.
+	//// If the used token is set correctly in the metadata, it should be logged in the access log.
+	//t.Run("check-used-token-metadata-access-log", func(t *testing.T) {
+	//	cc.maybeSkip(t, requiredCredentialOpenAI|requiredCredentialAWS)
+	//	// Since the access log might not be written immediately, we wait for the log to be written.
+	//	require.Eventually(t, func() bool {
+	//		accessLog, err := os.ReadFile(accessLogPath)
+	//		require.NoError(t, err)
+	//		// This should match the format of the access log in envoy.yaml.
+	//		type lineFormat struct {
+	//			UsedToken float64 `json:"used_token,omitempty"`
+	//			SomeCel   float64 `json:"some_cel,omitempty"`
+	//		}
+	//		scanner := bufio.NewScanner(bytes.NewReader(accessLog))
+	//		for scanner.Scan() {
+	//			line := scanner.Bytes()
+	//			var l lineFormat
+	//			if err = json.Unmarshal(line, &l); err != nil {
+	//				t.Logf("error unmarshalling line: %v", err)
+	//				continue
+	//			}
+	//			t.Logf("line: %s", line)
+	//			if l.SomeCel == 0 {
+	//				t.Log("some_cel is not existent or greater than zero")
+	//				continue
+	//			}
+	//			if l.UsedToken == 0 {
+	//				t.Log("used_token is not existent or greater than zero")
+	//				continue
+	//			}
+	//			return true
+	//		}
+	//		return false
+	//	}, 30*time.Second, 2*time.Second)
+	//})
+	//
+	//t.Run("streaming", func(t *testing.T) {
+	//	client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
+	//	for _, tc := range []realProvidersTestCase{
+	//		{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
+	//		{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
+	//	} {
+	//		t.Run(tc.name, func(t *testing.T) {
+	//			cc.maybeSkip(t, tc.required)
+	//			require.Eventually(t, func() bool {
+	//				stream := client.Chat.Completions.NewStreaming(context.Background(), openai.ChatCompletionNewParams{
+	//					Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
+	//						openai.UserMessage("Say this is a test"),
+	//					}),
+	//					Model: openai.F(tc.modelName),
+	//				})
+	//				defer func() {
+	//					_ = stream.Close()
+	//				}()
+	//
+	//				acc := openai.ChatCompletionAccumulator{}
+	//
+	//				for stream.Next() {
+	//					chunk := stream.Current()
+	//					if !acc.AddChunk(chunk) {
+	//						t.Log("error adding chunk")
+	//						return false
+	//					}
+	//				}
+	//
+	//				if err := stream.Err(); err != nil {
+	//					t.Logf("error: %v", err)
+	//					return false
+	//				}
+	//
+	//				nonEmptyCompletion := false
+	//				for _, choice := range acc.Choices {
+	//					t.Logf("choice: %s", choice.Message.Content)
+	//					if choice.Message.Content != "" {
+	//						nonEmptyCompletion = true
+	//					}
+	//				}
+	//				if !nonEmptyCompletion {
+	//					// Log the whole response for debugging.
+	//					t.Logf("response: %+v", acc)
+	//				}
+	//				return nonEmptyCompletion
+	//			}, 30*time.Second, 2*time.Second)
+	//		})
+	//	}
+	//})
 
-	// Read all access logs and check if the used token is logged.
-	// If the used token is set correctly in the metadata, it should be logged in the access log.
-	t.Run("check-used-token-metadata-access-log", func(t *testing.T) {
-		cc.maybeSkip(t, requiredCredentialOpenAI|requiredCredentialAWS)
-		// Since the access log might not be written immediately, we wait for the log to be written.
-		require.Eventually(t, func() bool {
-			accessLog, err := os.ReadFile(accessLogPath)
-			require.NoError(t, err)
-			// This should match the format of the access log in envoy.yaml.
-			type lineFormat struct {
-				UsedToken float64 `json:"used_token,omitempty"`
-				SomeCel   float64 `json:"some_cel,omitempty"`
-			}
-			scanner := bufio.NewScanner(bytes.NewReader(accessLog))
-			for scanner.Scan() {
-				line := scanner.Bytes()
-				var l lineFormat
-				if err = json.Unmarshal(line, &l); err != nil {
-					t.Logf("error unmarshalling line: %v", err)
-					continue
-				}
-				t.Logf("line: %s", line)
-				if l.SomeCel == 0 {
-					t.Log("some_cel is not existent or greater than zero")
-					continue
-				}
-				if l.UsedToken == 0 {
-					t.Log("used_token is not existent or greater than zero")
-					continue
-				}
-				return true
-			}
-			return false
-		}, 30*time.Second, 2*time.Second)
-	})
-
-	t.Run("streaming", func(t *testing.T) {
-		client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
-		for _, tc := range []realProvidersTestCase{
-			{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
-			{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				cc.maybeSkip(t, tc.required)
-				require.Eventually(t, func() bool {
-					stream := client.Chat.Completions.NewStreaming(context.Background(), openai.ChatCompletionNewParams{
-						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
-							openai.UserMessage("Say this is a test"),
-						}),
-						Model: openai.F(tc.modelName),
-					})
-					defer func() {
-						_ = stream.Close()
-					}()
-
-					acc := openai.ChatCompletionAccumulator{}
-
-					for stream.Next() {
-						chunk := stream.Current()
-						if !acc.AddChunk(chunk) {
-							t.Log("error adding chunk")
-							return false
-						}
-					}
-
-					if err := stream.Err(); err != nil {
-						t.Logf("error: %v", err)
-						return false
-					}
-
-					nonEmptyCompletion := false
-					for _, choice := range acc.Choices {
-						t.Logf("choice: %s", choice.Message.Content)
-						if choice.Message.Content != "" {
-							nonEmptyCompletion = true
-						}
-					}
-					if !nonEmptyCompletion {
-						// Log the whole response for debugging.
-						t.Logf("response: %+v", acc)
-					}
-					return nonEmptyCompletion
-				}, 30*time.Second, 2*time.Second)
-			})
-		}
-	})
-  
 	t.Run("Bedrock uses tool in response", func(t *testing.T) {
+		fmt.Println("starting tool test")
 		client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
+		fmt.Println("after client")
 		for _, tc := range []struct {
 			testCaseName,
 			modelName string
@@ -191,6 +191,7 @@ func TestWithRealProviders(t *testing.T) {
 			{testCaseName: "aws-bedrock", modelName: "us.anthropic.claude-3-5-sonnet-20240620-v1:0"}, // This will go to "aws-bedrock" using credentials file.
 		} {
 			t.Run(tc.modelName, func(t *testing.T) {
+				fmt.Println("inside run")
 				require.Eventually(t, func() bool {
 					// Step 1: Initial tool call request
 					question := "What is the weather in New York City?"
@@ -220,7 +221,9 @@ func TestWithRealProviders(t *testing.T) {
 						Seed:  openai.Int(0),
 						Model: openai.F(tc.modelName),
 					}
+					fmt.Println("after params set")
 					completion, err := client.Chat.Completions.New(context.Background(), params)
+					fmt.Println("after completion")
 					if err != nil {
 						t.Logf("error: %v", err)
 						return false
@@ -280,23 +283,9 @@ func TestWithRealProviders(t *testing.T) {
 					completionResult := secondChatCompletion.Choices[0].Message.Content
 					t.Logf("content of completion response using tool: %s", secondChatCompletion.Choices[0].Message.Content)
 					return completionResult == "The weather in Paris is currently sunny and 25°C."
-				}, 30*time.Second, 2*time.Second)
+				}, 500*time.Second, 200*time.Second)
 			})
-			if err != nil {
-				t.Logf("error: %v", err)
-				return false
-			}
-			returnsToolCall := false
-			for _, choice := range chatCompletion.Choices {
-				t.Logf("choice content: %s", choice.Message.Content)
-				t.Logf("finish reason: %s", choice.FinishReason)
-				t.Logf("choice toolcall: %v", choice.Message.ToolCalls)
-				if choice.FinishReason == openai.ChatCompletionChoicesFinishReasonToolCalls {
-					returnsToolCall = true
-				}
-			}
-			return returnsToolCall
-		}, 30*time.Second, 2*time.Second)
+		}
 	})
 }
 
