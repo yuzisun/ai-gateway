@@ -23,7 +23,6 @@ import (
 //
 // This does not require any environment variables to be set as it relies on the test upstream.
 func TestWithTestUpstream(t *testing.T) {
-	t.Skip()
 	requireBinaries(t)
 	accessLogPath := t.TempDir() + "/access.log"
 	requireRunEnvoy(t, accessLogPath)
