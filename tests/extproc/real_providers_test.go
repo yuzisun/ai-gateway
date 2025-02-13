@@ -10,14 +10,13 @@ package extproc
 import (
 	"bufio"
 	"bytes"
-	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
