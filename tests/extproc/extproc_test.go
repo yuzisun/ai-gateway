@@ -65,7 +65,7 @@ func requireRunEnvoy(t *testing.T, accessLogPath string) {
 	// Starts the Envoy proxy.
 	cmd := exec.Command("envoy",
 		"-c", envoyYamlPath,
-		"--log-level", "warn",
+		"--log-level", "debug",
 		"--concurrency", strconv.Itoa(max(runtime.NumCPU(), 2)),
 	)
 	cmd.Stdout = os.Stdout

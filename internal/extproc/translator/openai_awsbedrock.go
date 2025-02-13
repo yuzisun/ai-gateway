@@ -480,6 +480,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseError(respHeaders
 	} else {
 		var buf []byte
 		buf, err = io.ReadAll(body)
+		fmt.Printf("\nprinting body from ResponseError:\n %v\n", string(buf))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read error body: %w", err)
 		}
@@ -547,6 +548,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 			mut.Body = append(mut.Body, oaiEventBytes...)
 			mut.Body = append(mut.Body, []byte("\n\n")...)
 		}
+		fmt.Printf("\nprinting mut.Body %v", string(mut.Body))
 
 		if endOfStream {
 			mut.Body = append(mut.Body, []byte("data: [DONE]\n")...)
