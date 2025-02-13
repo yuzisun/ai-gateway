@@ -1,3 +1,8 @@
+// Copyright Envoy AI Gateway Authors
+// SPDX-License-Identifier: Apache-2.0
+// The full text of the Apache license is available in the LICENSE file at
+// the root of the repo.
+
 //go:build test_extproc
 
 package extproc
@@ -6,7 +11,6 @@ import (
 	"bufio"
 	"bytes"
 	"cmp"
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -15,6 +19,7 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/envoyproxy/ai-gateway/filterapi"
@@ -69,10 +74,10 @@ func TestWithRealProviders(t *testing.T) {
 			{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
 			{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
 		} {
-			cc.maybeSkip(t, tc.required)
 			t.Run(tc.modelName, func(t *testing.T) {
+				cc.maybeSkip(t, tc.required)
 				require.Eventually(t, func() bool {
-					chatCompletion, err := client.Chat.Completions.New(context.Background(), openai.ChatCompletionNewParams{
+					chatCompletion, err := client.Chat.Completions.New(t.Context(), openai.ChatCompletionNewParams{
 						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
 							openai.UserMessage("Say this is a test"),
 						}),
@@ -140,7 +145,7 @@ func TestWithRealProviders(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				cc.maybeSkip(t, tc.required)
 				require.Eventually(t, func() bool {
-					stream := client.Chat.Completions.NewStreaming(context.Background(), openai.ChatCompletionNewParams{
+					stream := client.Chat.Completions.NewStreaming(t.Context(), openai.ChatCompletionNewParams{
 						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
 							openai.UserMessage("Say this is a test"),
 						}),
@@ -288,6 +293,29 @@ func TestWithRealProviders(t *testing.T) {
 				}, 500*time.Second, 200*time.Second)
 			})
 		}
+	})
+
+	// Models are served by the extproc filter as a direct response so this can run even if the
+	// real credentials are not present.
+	// We don't need to run it on a concrete backend, as it will not route anywhere.
+	t.Run("list-models", func(t *testing.T) {
+		client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
+
+		var models []string
+
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
+			it := client.Models.ListAutoPaging(t.Context())
+			for it.Next() {
+				models = append(models, it.Current().ID)
+			}
+			assert.NoError(c, it.Err())
+		}, 30*time.Second, 2*time.Second)
+
+		require.Equal(t, []string{
+			"gpt-4o-mini",
+			"us.meta.llama3-2-1b-instruct-v1:0",
+			"us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+		}, models)
 	})
 }
 

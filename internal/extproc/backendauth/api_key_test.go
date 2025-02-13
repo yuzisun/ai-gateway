@@ -1,7 +1,11 @@
+// Copyright Envoy AI Gateway Authors
+// SPDX-License-Identifier: Apache-2.0
+// The full text of the Apache license is available in the LICENSE file at
+// the root of the repo.
+
 package backendauth
 
 import (
-	"context"
 	"os"
 	"testing"
 
@@ -63,7 +67,7 @@ func TestApiKeyHandler_Do(t *testing.T) {
 			Body: []byte(`{"messages": [{"role": "user", "content": [{"text": "Say this is a test!"}]}]}`),
 		},
 	}
-	err = handler.Do(context.Background(), requestHeaders, headerMut, bodyMut)
+	err = handler.Do(t.Context(), requestHeaders, headerMut, bodyMut)
 	require.NoError(t, err)
 
 	bearerToken, ok := requestHeaders["Authorization"]

@@ -1,9 +1,13 @@
+// Copyright Envoy AI Gateway Authors
+// SPDX-License-Identifier: Apache-2.0
+// The full text of the Apache license is available in the LICENSE file at
+// the root of the repo.
+
 //go:build test_e2e
 
 package e2e
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -21,11 +25,8 @@ import (
 )
 
 func Test_Examples_TokenRateLimit(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-
 	const manifest = "../../examples/token_ratelimit/token_ratelimit.yaml"
-	require.NoError(t, kubectlApplyManifest(ctx, manifest))
+	require.NoError(t, kubectlApplyManifest(t.Context(), manifest))
 
 	const egSelector = "gateway.envoyproxy.io/owning-gateway-name=envoy-ai-gateway-token-ratelimit"
 	requireWaitForPodReady(t, egNamespace, egSelector)

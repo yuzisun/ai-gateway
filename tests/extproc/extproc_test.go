@@ -1,3 +1,8 @@
+// Copyright Envoy AI Gateway Authors
+// SPDX-License-Identifier: Apache-2.0
+// The full text of the Apache license is available in the LICENSE file at
+// the root of the repo.
+
 //go:build test_extproc
 
 package extproc
@@ -34,23 +39,21 @@ var (
 //
 // The config must be in YAML format specified in [filterapi.Config] type.
 func requireExtProc(t *testing.T, stdout io.Writer, executable, configPath string, envs ...string) {
-	cmd := exec.Command(executable)
+	cmd := exec.CommandContext(t.Context(), executable)
 	cmd.Stdout = stdout
 	cmd.Stderr = os.Stderr
 	cmd.Args = append(cmd.Args, "-configPath", configPath)
 	cmd.Env = append(os.Environ(), envs...)
 	require.NoError(t, cmd.Start())
-	t.Cleanup(func() { _ = cmd.Process.Signal(os.Interrupt) })
 }
 
 func requireTestUpstream(t *testing.T) {
 	// Starts the Envoy proxy.
-	cmd := exec.Command(testUpstreamExecutablePath()) // #nosec G204
+	cmd := exec.CommandContext(t.Context(), testUpstreamExecutablePath()) // #nosec G204
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = []string{"TESTUPSTREAM_ID=extproc_test"}
 	require.NoError(t, cmd.Start())
-	t.Cleanup(func() { _ = cmd.Process.Kill() })
 }
 
 // requireRunEnvoy starts the Envoy proxy with the provided configuration.
@@ -63,7 +66,7 @@ func requireRunEnvoy(t *testing.T, accessLogPath string) {
 	require.NoError(t, os.WriteFile(envoyYamlPath, []byte(envoyYaml), 0o600))
 
 	// Starts the Envoy proxy.
-	cmd := exec.Command("envoy",
+	cmd := exec.CommandContext(t.Context(), "envoy",
 		"-c", envoyYamlPath,
 		"--log-level", "debug",
 		"--concurrency", strconv.Itoa(max(runtime.NumCPU(), 2)),
@@ -71,7 +74,6 @@ func requireRunEnvoy(t *testing.T, accessLogPath string) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	require.NoError(t, cmd.Start())
-	t.Cleanup(func() { _ = cmd.Process.Kill() })
 }
 
 // requireBinaries requires Envoy to be present in the PATH as well as the Extproc and testuptream binaries in the out directory.

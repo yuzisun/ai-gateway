@@ -1,7 +1,11 @@
+// Copyright Envoy AI Gateway Authors
+// SPDX-License-Identifier: Apache-2.0
+// The full text of the Apache license is available in the LICENSE file at
+// the root of the repo.
+
 package backendauth
 
 import (
-	"context"
 	"os"
 	"testing"
 
@@ -41,7 +45,7 @@ aws_secret_access_key = test
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewHandler(context.Background(), tt.config)
+			_, err := NewHandler(t.Context(), tt.config)
 			require.NoError(t, err)
 		})
 	}

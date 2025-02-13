@@ -1,7 +1,11 @@
+// Copyright Envoy AI Gateway Authors
+// SPDX-License-Identifier: Apache-2.0
+// The full text of the Apache license is available in the LICENSE file at
+// the root of the repo.
+
 package extensionserver
 
 import (
-	"context"
 	"testing"
 
 	"github.com/go-logr/logr"
@@ -17,7 +21,7 @@ func TestNew(t *testing.T) {
 func TestCheck(t *testing.T) {
 	logger := logr.Discard()
 	s := New(logger)
-	_, err := s.Check(context.Background(), nil)
+	_, err := s.Check(t.Context(), nil)
 	require.NoError(t, err)
 }
 

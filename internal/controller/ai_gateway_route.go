@@ -1,3 +1,8 @@
+// Copyright Envoy AI Gateway Authors
+// SPDX-License-Identifier: Apache-2.0
+// The full text of the Apache license is available in the LICENSE file at
+// the root of the repo.
+
 package controller
 
 import (
@@ -67,15 +72,6 @@ func (c *aiGatewayRouteController) Reconcile(ctx context.Context, req reconcile.
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
-	}
-
-	// https://github.com/kubernetes-sigs/controller-runtime/issues/1517#issuecomment-844703142
-	gvks, unversioned, err := c.client.Scheme().ObjectKinds(&aiGatewayRoute)
-	if err != nil {
-		panic(err)
-	}
-	if !unversioned && len(gvks) == 1 {
-		aiGatewayRoute.SetGroupVersionKind(gvks[0])
 	}
 
 	if err := c.ensuresExtProcConfigMapExists(ctx, &aiGatewayRoute); err != nil {

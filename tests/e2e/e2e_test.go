@@ -1,3 +1,8 @@
+// Copyright Envoy AI Gateway Authors
+// SPDX-License-Identifier: Apache-2.0
+// The full text of the Apache license is available in the LICENSE file at
+// the root of the repo.
+
 //go:build test_e2e
 
 package e2e
@@ -61,21 +66,13 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	if err := initRateLimitServer(ctx); err != nil {
-		cancel()
-		panic(err)
-	}
-
 	code := m.Run()
 	cancel()
 	os.Exit(code)
 }
 
 func initKindCluster(ctx context.Context) (err error) {
-	const (
-		kindPath        = "../../.bin/kind"
-		kindClusterName = "envoy-ai-gateway"
-	)
+	const kindClusterName = "envoy-ai-gateway"
 
 	initLog("Setting up the kind cluster")
 	start := time.Now()
@@ -85,7 +82,7 @@ func initKindCluster(ctx context.Context) (err error) {
 	}()
 
 	initLog("\tCreating kind cluster named envoy-ai-gateway")
-	cmd := exec.CommandContext(ctx, kindPath, "create", "cluster", "--name", kindClusterName)
+	cmd := exec.CommandContext(ctx, "go", "tool", "kind", "create", "cluster", "--name", kindClusterName)
 	out, err := cmd.CombinedOutput()
 	if err != nil && !bytes.Contains(out, []byte("already exist")) {
 		fmt.Printf("Error creating kind cluster: %s\n", out)
@@ -93,7 +90,7 @@ func initKindCluster(ctx context.Context) (err error) {
 	}
 
 	initLog("\tSwitching kubectl context to envoy-ai-gateway")
-	cmd = exec.CommandContext(ctx, kindPath, "export", "kubeconfig", "--name", kindClusterName)
+	cmd = exec.CommandContext(ctx, "go", "tool", "kind", "export", "kubeconfig", "--name", kindClusterName)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err = cmd.Run(); err != nil {
@@ -106,7 +103,7 @@ func initKindCluster(ctx context.Context) (err error) {
 		"ghcr.io/envoyproxy/ai-gateway/extproc:latest",
 		"ghcr.io/envoyproxy/ai-gateway/testupstream:latest",
 	} {
-		cmd := exec.CommandContext(ctx, kindPath, "load", "docker-image", image, "--name", kindClusterName)
+		cmd := exec.CommandContext(ctx, "go", "tool", "kind", "load", "docker-image", image, "--name", kindClusterName)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err = cmd.Run(); err != nil {
@@ -126,7 +123,7 @@ func initEnvoyGateway(ctx context.Context) (err error) {
 		initLog(fmt.Sprintf("\tdone (took %.2fs in total)", elapsed.Seconds()))
 	}()
 	initLog("\tHelm Install")
-	helm := exec.CommandContext(ctx, "helm", "upgrade", "-i", "eg",
+	helm := exec.CommandContext(ctx, "go", "tool", "helm", "upgrade", "-i", "eg",
 		"oci://docker.io/envoyproxy/gateway-helm", "--version", egVersion,
 		"-n", "envoy-gateway-system", "--create-namespace")
 	helm.Stdout = os.Stdout
@@ -143,6 +140,10 @@ func initEnvoyGateway(ctx context.Context) (err error) {
 	if err = kubectlRestartDeployment(ctx, "envoy-gateway-system", "envoy-gateway"); err != nil {
 		return
 	}
+	initLog("\tWaiting for Ratelimit deployment to be ready")
+	if err = kubectlWaitForDeploymentReady("envoy-gateway-system", "envoy-ratelimit"); err != nil {
+		return
+	}
 	initLog("\tWaiting for Envoy Gateway deployment to be ready")
 	return kubectlWaitForDeploymentReady("envoy-gateway-system", "envoy-gateway")
 }
@@ -155,7 +156,7 @@ func initAIGateway(ctx context.Context) (err error) {
 		initLog(fmt.Sprintf("\tdone (took %.2fs in total)\n", elapsed.Seconds()))
 	}()
 	initLog("\tHelm Install")
-	helm := exec.CommandContext(ctx, "helm", "upgrade", "-i", "ai-eg",
+	helm := exec.CommandContext(ctx, "go", "tool", "helm", "upgrade", "-i", "ai-eg",
 		"../../manifests/charts/ai-gateway-helm",
 		"-n", "envoy-ai-gateway-system", "--create-namespace")
 	helm.Stdout = os.Stdout
@@ -184,24 +185,6 @@ func initTestupstream(ctx context.Context) (err error) {
 	}
 	initLog("\twaiting for deployment")
 	return kubectlWaitForDeploymentReady("default", "testupstream")
-}
-
-func initRateLimitServer(ctx context.Context) (err error) {
-	initLog("Installing Redis for Rate limits")
-	start := time.Now()
-	defer func() {
-		elapsed := time.Since(start)
-		initLog(fmt.Sprintf("\tdone (took %.2fs in total)\n", elapsed.Seconds()))
-	}()
-	initLog("\tapplying manifests")
-	if err = kubectlApplyManifest(ctx, "./init/ratelimit/"); err != nil {
-		return
-	}
-	initLog("\twaiting for deployment")
-	if err := kubectlWaitForDeploymentReady("redis-system", "redis"); err != nil {
-		return err
-	}
-	return kubectlWaitForDeploymentReady("envoy-gateway-system", "envoy-ratelimit")
 }
 
 func kubectl(ctx context.Context, args ...string) *exec.Cmd {
@@ -324,13 +307,4 @@ func (f portForwarder) kill() {
 // address returns the address of the port forwarder.
 func (f portForwarder) address() string {
 	return fmt.Sprintf("http://127.0.0.1:%d", f.localPort)
-}
-
-// getEnvVarOrSkip requires an environment variable to be set.
-func getEnvVarOrSkip(t *testing.T, envVar string) string {
-	value := os.Getenv(envVar)
-	if value == "" {
-		t.Skipf("Environment variable %s is not set", envVar)
-	}
-	return value
 }

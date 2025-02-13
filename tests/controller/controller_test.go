@@ -1,3 +1,8 @@
+// Copyright Envoy AI Gateway Authors
+// SPDX-License-Identifier: Apache-2.0
+// The full text of the Apache license is available in the LICENSE file at
+// the root of the repo.
+
 //go:build test_controller
 
 // Package controller tests the internal/controller package using envtest.
@@ -6,7 +11,6 @@
 package controller
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -53,8 +57,8 @@ func TestStartControllers(t *testing.T) {
 	}
 	l := logr.FromSlogHandler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{}))
 	klog.SetLogger(l)
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(2*time.Minute))
-	defer cancel()
+
+	ctx := t.Context()
 	go func() {
 		err := controller.StartControllers(ctx, cfg, l, opts)
 		require.NoError(t, err)
@@ -341,8 +345,7 @@ func TestAIGatewayRouteController(t *testing.T) {
 	err = ctrl.NewControllerManagedBy(mgr).For(&aigv1a1.AIGatewayRoute{}).Complete(rc)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(2*time.Minute))
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := mgr.Start(ctx)
 		require.NoError(t, err)
@@ -397,7 +400,6 @@ func TestAIGatewayRouteController(t *testing.T) {
 		// Verify that they are the same.
 		created := item.(*aigv1a1.AIGatewayRoute)
 		require.Equal(t, "myroute", created.Name)
-		require.Equal(t, "AIGatewayRoute", created.Kind)
 
 		created.TypeMeta = metav1.TypeMeta{} // This will be populated by the controller internally, so we ignore it.
 		require.Equal(t, origin, created)
@@ -439,8 +441,7 @@ func TestAIServiceBackendController(t *testing.T) {
 	err = ctrl.NewControllerManagedBy(mgr).For(&aigv1a1.AIServiceBackend{}).Complete(bc)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(2*time.Minute))
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := mgr.Start(ctx)
 		require.NoError(t, err)
@@ -483,8 +484,7 @@ func TestSecretController(t *testing.T) {
 	err = ctrl.NewControllerManagedBy(mgr).For(&corev1.Secret{}).Complete(sc)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(2*time.Minute))
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := mgr.Start(ctx)
 		require.NoError(t, err)

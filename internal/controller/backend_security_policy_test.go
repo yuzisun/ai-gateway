@@ -1,7 +1,11 @@
+// Copyright Envoy AI Gateway Authors
+// SPDX-License-Identifier: Apache-2.0
+// The full text of the Apache license is available in the LICENSE file at
+// the root of the repo.
+
 package controller
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,9 +26,9 @@ func TestBackendSecurityController_Reconcile(t *testing.T) {
 	backendSecurityPolicyName := "mybackendSecurityPolicy"
 	namespace := "default"
 
-	err := cl.Create(context.Background(), &aigv1a1.BackendSecurityPolicy{ObjectMeta: metav1.ObjectMeta{Name: backendSecurityPolicyName, Namespace: namespace}})
+	err := cl.Create(t.Context(), &aigv1a1.BackendSecurityPolicy{ObjectMeta: metav1.ObjectMeta{Name: backendSecurityPolicyName, Namespace: namespace}})
 	require.NoError(t, err)
-	_, err = c.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: namespace, Name: backendSecurityPolicyName}})
+	_, err = c.Reconcile(t.Context(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: namespace, Name: backendSecurityPolicyName}})
 	require.NoError(t, err)
 	item, ok := <-ch
 	require.True(t, ok)
@@ -33,8 +37,8 @@ func TestBackendSecurityController_Reconcile(t *testing.T) {
 	require.Equal(t, namespace, item.(*aigv1a1.BackendSecurityPolicy).Namespace)
 
 	// Test the case where the BackendSecurityPolicy is being deleted.
-	err = cl.Delete(context.Background(), &aigv1a1.BackendSecurityPolicy{ObjectMeta: metav1.ObjectMeta{Name: backendSecurityPolicyName, Namespace: namespace}})
+	err = cl.Delete(t.Context(), &aigv1a1.BackendSecurityPolicy{ObjectMeta: metav1.ObjectMeta{Name: backendSecurityPolicyName, Namespace: namespace}})
 	require.NoError(t, err)
-	_, err = c.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: namespace, Name: backendSecurityPolicyName}})
+	_, err = c.Reconcile(t.Context(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: namespace, Name: backendSecurityPolicyName}})
 	require.NoError(t, err)
 }

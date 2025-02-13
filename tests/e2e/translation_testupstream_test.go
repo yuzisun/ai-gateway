@@ -1,3 +1,8 @@
+// Copyright Envoy AI Gateway Authors
+// SPDX-License-Identifier: Apache-2.0
+// The full text of the Apache license is available in the LICENSE file at
+// the root of the repo.
+
 //go:build test_e2e
 
 package e2e
@@ -17,11 +22,8 @@ import (
 
 // TestTranslationWithTestUpstream tests the translation with the test upstream.
 func TestTranslationWithTestUpstream(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-
 	const manifest = "testdata/translation_testupstream.yaml"
-	require.NoError(t, kubectlApplyManifest(ctx, manifest))
+	require.NoError(t, kubectlApplyManifest(t.Context(), manifest))
 
 	const egSelector = "gateway.envoyproxy.io/owning-gateway-name=translation-testupstream"
 	requireWaitForPodReady(t, egNamespace, egSelector)
@@ -57,7 +59,7 @@ func TestTranslationWithTestUpstream(t *testing.T) {
 					fwd := requireNewHTTPPortForwarder(t, egNamespace, egSelector, egDefaultPort)
 					defer fwd.kill()
 
-					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 					defer cancel()
 
 					t.Logf("modelName: %s", tc.modelName)

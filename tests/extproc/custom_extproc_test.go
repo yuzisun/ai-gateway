@@ -1,9 +1,13 @@
+// Copyright Envoy AI Gateway Authors
+// SPDX-License-Identifier: Apache-2.0
+// The full text of the Apache license is available in the LICENSE file at
+// the root of the repo.
+
 //go:build test_extproc
 
 package extproc
 
 import (
-	"context"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -53,7 +57,7 @@ func TestExtProcCustomRouter(t *testing.T) {
 			option.WithHeader(testupstreamlib.ResponseBodyHeaderKey,
 				base64.StdEncoding.EncodeToString([]byte(`{"choices":[{"message":{"content":"This is a test."}}]}`)),
 			))
-		chatCompletion, err := client.Chat.Completions.New(context.Background(), openai.ChatCompletionNewParams{
+		chatCompletion, err := client.Chat.Completions.New(t.Context(), openai.ChatCompletionNewParams{
 			Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
 				openai.UserMessage("Say this is a test"),
 			}),

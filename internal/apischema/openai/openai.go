@@ -1,3 +1,8 @@
+// Copyright Envoy AI Gateway Authors
+// SPDX-License-Identifier: Apache-2.0
+// The full text of the Apache license is available in the LICENSE file at
+// the root of the repo.
+
 // Package openai contains the following is the OpenAI API schema definitions.
 // Note that we intentionally do not use the code generation tools like OpenAPI Generator not only to keep the code simple
 // but also because the OpenAI's OpenAPI definition is not compliant with the spec and the existing tools do not work well.
@@ -6,7 +11,9 @@ package openai
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Chat message role defined by the OpenAI API.
@@ -722,4 +729,44 @@ type ErrorType struct {
 	Param *string `json:"param,omitempty"`
 	// The event_id of the client event that caused the error, if applicable.
 	EventID *string `json:"event_id,omitempty"`
+}
+
+// ModelList is described in the OpenAI API documentation
+// https://platform.openai.com/docs/api-reference/models/list
+type ModelList struct {
+	// Data is a list of models.
+	Data []Model `json:"data"`
+	// Object is the object type, which is always "list".
+	Object string `json:"object"`
+}
+
+// Model is described in the OpenAI API documentation
+// https://platform.openai.com/docs/api-reference/models/object
+type Model struct {
+	// ID is the model identifier, which can be referenced in the API endpoints.
+	ID string `json:"id"`
+	// Created is the Unix timestamp (in seconds) when the model was created.
+	Created JSONUNIXTime `json:"created"`
+	// Object is the object type, which is always "model".
+	Object string `json:"object"`
+	// OwnedBy is the organization that owns the model.
+	OwnedBy string `json:"owned_by"`
+}
+
+// JSONUNIXTime is a helper type to marshal/unmarshal time.Time UNIX timestamps.
+type JSONUNIXTime time.Time
+
+// MarshalJSON implements [json.Marshaler].
+func (t JSONUNIXTime) MarshalJSON() ([]byte, error) {
+	return []byte(strconv.FormatInt(time.Time(t).Unix(), 10)), nil
+}
+
+// UnmarshalJSON implements [json.Unmarshaler].
+func (t *JSONUNIXTime) UnmarshalJSON(s []byte) error {
+	q, err := strconv.ParseInt(string(s), 10, 64)
+	if err != nil {
+		return err
+	}
+	*(*time.Time)(t) = time.Unix(q, 0)
+	return nil
 }
