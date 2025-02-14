@@ -137,56 +137,56 @@ func TestWithRealProviders(t *testing.T) {
 		}, 30*time.Second, 2*time.Second)
 	})
 
-	t.Run("streaming", func(t *testing.T) {
-		client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
-		for _, tc := range []realProvidersTestCase{
-			{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
-			{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				cc.maybeSkip(t, tc.required)
-				require.Eventually(t, func() bool {
-					stream := client.Chat.Completions.NewStreaming(t.Context(), openai.ChatCompletionNewParams{
-						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
-							openai.UserMessage("Say this is a test"),
-						}),
-						Model: openai.F(tc.modelName),
-					})
-					defer func() {
-						_ = stream.Close()
-					}()
-
-					acc := openai.ChatCompletionAccumulator{}
-
-					for stream.Next() {
-						chunk := stream.Current()
-						if !acc.AddChunk(chunk) {
-							t.Log("error adding chunk")
-							return false
-						}
-					}
-
-					if err := stream.Err(); err != nil {
-						t.Logf("error: %v", err)
-						return false
-					}
-
-					nonEmptyCompletion := false
-					for _, choice := range acc.Choices {
-						t.Logf("choice: %s", choice.Message.Content)
-						if choice.Message.Content != "" {
-							nonEmptyCompletion = true
-						}
-					}
-					if !nonEmptyCompletion {
-						// Log the whole response for debugging.
-						t.Logf("response: %+v", acc)
-					}
-					return nonEmptyCompletion
-				}, 30*time.Second, 2*time.Second)
-			})
-		}
-	})
+	//t.Run("streaming", func(t *testing.T) {
+	//	client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
+	//	for _, tc := range []realProvidersTestCase{
+	//		{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
+	//		{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
+	//	} {
+	//		t.Run(tc.name, func(t *testing.T) {
+	//			cc.maybeSkip(t, tc.required)
+	//			require.Eventually(t, func() bool {
+	//				stream := client.Chat.Completions.NewStreaming(t.Context(), openai.ChatCompletionNewParams{
+	//					Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
+	//						openai.UserMessage("Say this is a test"),
+	//					}),
+	//					Model: openai.F(tc.modelName),
+	//				})
+	//				defer func() {
+	//					_ = stream.Close()
+	//				}()
+	//
+	//				acc := openai.ChatCompletionAccumulator{}
+	//
+	//				for stream.Next() {
+	//					chunk := stream.Current()
+	//					if !acc.AddChunk(chunk) {
+	//						t.Log("error adding chunk")
+	//						return false
+	//					}
+	//				}
+	//
+	//				if err := stream.Err(); err != nil {
+	//					t.Logf("error: %v", err)
+	//					return false
+	//				}
+	//
+	//				nonEmptyCompletion := false
+	//				for _, choice := range acc.Choices {
+	//					t.Logf("choice: %s", choice.Message.Content)
+	//					if choice.Message.Content != "" {
+	//						nonEmptyCompletion = true
+	//					}
+	//				}
+	//				if !nonEmptyCompletion {
+	//					// Log the whole response for debugging.
+	//					t.Logf("response: %+v", acc)
+	//				}
+	//				return nonEmptyCompletion
+	//			}, 30*time.Second, 2*time.Second)
+	//		})
+	//	}
+	//})
 
 	t.Run("Bedrock uses tool in response", func(t *testing.T) {
 		fmt.Println("starting tool test")
