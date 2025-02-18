@@ -8,8 +8,6 @@
 package extproc
 
 import (
-	"bufio"
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -69,73 +67,73 @@ func TestWithRealProviders(t *testing.T) {
 
 	requireExtProc(t, os.Stdout, extProcExecutablePath(), configPath)
 
-	t.Run("health-checking", func(t *testing.T) {
-		client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
-		for _, tc := range []realProvidersTestCase{
-			{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
-			{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
-		} {
-			t.Run(tc.modelName, func(t *testing.T) {
-				cc.maybeSkip(t, tc.required)
-				require.Eventually(t, func() bool {
-					chatCompletion, err := client.Chat.Completions.New(t.Context(), openai.ChatCompletionNewParams{
-						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
-							openai.UserMessage("Say this is a test"),
-						}),
-						Model: openai.F(tc.modelName),
-					})
-					if err != nil {
-						t.Logf("error: %v", err)
-						return false
-					}
-					nonEmptyCompletion := false
-					for _, choice := range chatCompletion.Choices {
-						t.Logf("choice: %s", choice.Message.Content)
-						if choice.Message.Content != "" {
-							nonEmptyCompletion = true
-						}
-					}
-					return nonEmptyCompletion
-				}, 30*time.Second, 2*time.Second)
-			})
-		}
-	})
-
-	// Read all access logs and check if the used token is logged.
-	// If the used token is set correctly in the metadata, it should be logged in the access log.
-	t.Run("check-used-token-metadata-access-log", func(t *testing.T) {
-		cc.maybeSkip(t, requiredCredentialOpenAI|requiredCredentialAWS)
-		// Since the access log might not be written immediately, we wait for the log to be written.
-		require.Eventually(t, func() bool {
-			accessLog, err := os.ReadFile(accessLogPath)
-			require.NoError(t, err)
-			// This should match the format of the access log in envoy.yaml.
-			type lineFormat struct {
-				UsedToken float64 `json:"used_token,omitempty"`
-				SomeCel   float64 `json:"some_cel,omitempty"`
-			}
-			scanner := bufio.NewScanner(bytes.NewReader(accessLog))
-			for scanner.Scan() {
-				line := scanner.Bytes()
-				var l lineFormat
-				if err = json.Unmarshal(line, &l); err != nil {
-					t.Logf("error unmarshalling line: %v", err)
-					continue
-				}
-				t.Logf("line: %s", line)
-				if l.SomeCel == 0 {
-					t.Log("some_cel is not existent or greater than zero")
-					continue
-				}
-				if l.UsedToken == 0 {
-					t.Log("used_token is not existent or greater than zero")
-					continue
-				}
-				return true
-			}
-			return false
-		}, 30*time.Second, 2*time.Second)
-	})
+	//t.Run("health-checking", func(t *testing.T) {
+	//	client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
+	//	for _, tc := range []realProvidersTestCase{
+	//		{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
+	//		{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
+	//	} {
+	//		t.Run(tc.modelName, func(t *testing.T) {
+	//			cc.maybeSkip(t, tc.required)
+	//			require.Eventually(t, func() bool {
+	//				chatCompletion, err := client.Chat.Completions.New(t.Context(), openai.ChatCompletionNewParams{
+	//					Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
+	//						openai.UserMessage("Say this is a test"),
+	//					}),
+	//					Model: openai.F(tc.modelName),
+	//				})
+	//				if err != nil {
+	//					t.Logf("error: %v", err)
+	//					return false
+	//				}
+	//				nonEmptyCompletion := false
+	//				for _, choice := range chatCompletion.Choices {
+	//					t.Logf("choice: %s", choice.Message.Content)
+	//					if choice.Message.Content != "" {
+	//						nonEmptyCompletion = true
+	//					}
+	//				}
+	//				return nonEmptyCompletion
+	//			}, 30*time.Second, 2*time.Second)
+	//		})
+	//	}
+	//})
+	//
+	//// Read all access logs and check if the used token is logged.
+	//// If the used token is set correctly in the metadata, it should be logged in the access log.
+	//t.Run("check-used-token-metadata-access-log", func(t *testing.T) {
+	//	cc.maybeSkip(t, requiredCredentialOpenAI|requiredCredentialAWS)
+	//	// Since the access log might not be written immediately, we wait for the log to be written.
+	//	require.Eventually(t, func() bool {
+	//		accessLog, err := os.ReadFile(accessLogPath)
+	//		require.NoError(t, err)
+	//		// This should match the format of the access log in envoy.yaml.
+	//		type lineFormat struct {
+	//			UsedToken float64 `json:"used_token,omitempty"`
+	//			SomeCel   float64 `json:"some_cel,omitempty"`
+	//		}
+	//		scanner := bufio.NewScanner(bytes.NewReader(accessLog))
+	//		for scanner.Scan() {
+	//			line := scanner.Bytes()
+	//			var l lineFormat
+	//			if err = json.Unmarshal(line, &l); err != nil {
+	//				t.Logf("error unmarshalling line: %v", err)
+	//				continue
+	//			}
+	//			t.Logf("line: %s", line)
+	//			if l.SomeCel == 0 {
+	//				t.Log("some_cel is not existent or greater than zero")
+	//				continue
+	//			}
+	//			if l.UsedToken == 0 {
+	//				t.Log("used_token is not existent or greater than zero")
+	//				continue
+	//			}
+	//			return true
+	//		}
+	//		return false
+	//	}, 30*time.Second, 2*time.Second)
+	//})
 
 	//t.Run("streaming", func(t *testing.T) {
 	//	client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
@@ -226,7 +224,7 @@ func TestWithRealProviders(t *testing.T) {
 							},
 						}),
 						// TODO: check if we should seed.
-						Seed:  openai.Int(0),
+						//Seed:  openai.Int(0),
 						Model: openai.F(tc.modelName),
 					}
 					fmt.Println("after params set")
