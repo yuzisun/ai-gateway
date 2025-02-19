@@ -581,21 +581,39 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 			CompletionTokens: bedrockResp.Usage.OutputTokens,
 		}
 	}
-	for i, output := range bedrockResp.Output.Message.Content {
-		fmt.Printf("\nbedrock output message: i=%v, text=%v, toolResult=%v, toolUse=%v\n", i, *output.Text, output.ToolResult, output.ToolUse)
+
+	// Merge bedrock response content into openai response choices
+	for i := 0; i < len(bedrockResp.Output.Message.Content); i++ {
+		output := bedrockResp.Output.Message.Content[i]
 		choice := openai.ChatCompletionResponseChoice{
 			Index: (int64)(i),
 			Message: openai.ChatCompletionResponseChoiceMessage{
-				Content: output.Text,
-				Role:    bedrockResp.Output.Message.Role,
+				Role: bedrockResp.Output.Message.Role,
 			},
 			FinishReason: o.bedrockStopReasonToOpenAIStopReason(bedrockResp.StopReason),
 		}
-		if toolCall := o.bedrockToolUseToOpenAICalls(output.ToolUse); toolCall != nil {
-			choice.Message.ToolCalls = []openai.ChatCompletionMessageToolCallParam{*toolCall}
+
+		if output.Text != nil {
+			choice.Message.Content = output.Text
 		}
-		// TODO: merge the choice message with the
-		// update dont append
+
+		if output.ToolUse != nil {
+			if toolCall := o.bedrockToolUseToOpenAICalls(output.ToolUse); toolCall != nil {
+				choice.Message.ToolCalls = []openai.ChatCompletionMessageToolCallParam{*toolCall}
+			}
+		}
+
+		// Check if the next element should be merged
+		if i+1 < len(bedrockResp.Output.Message.Content) {
+			nextOutput := bedrockResp.Output.Message.Content[i+1]
+			if nextOutput.Text == nil && nextOutput.ToolUse != nil {
+				if toolCall := o.bedrockToolUseToOpenAICalls(nextOutput.ToolUse); toolCall != nil {
+					choice.Message.ToolCalls = append(choice.Message.ToolCalls, *toolCall)
+				}
+				i++ // Skip the next element as it has been merged
+			}
+		}
+
 		openAIResp.Choices = append(openAIResp.Choices, choice)
 	}
 
