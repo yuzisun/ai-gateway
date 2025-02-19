@@ -312,16 +312,35 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMessageRoleTool(
 	openAiMessage *openai.ChatCompletionToolMessageParam, role string,
 ) (*awsbedrock.Message, error) {
+	var content []*awsbedrock.ToolResultContentBlock
+
+	switch v := openAiMessage.Content.Value.(type) {
+	case string:
+		content = []*awsbedrock.ToolResultContentBlock{
+			{
+				Text: &v,
+			},
+		}
+	case []openai.ChatCompletionContentPartTextParam:
+		var combinedText string
+		for _, part := range v {
+			combinedText += part.Text
+		}
+		content = []*awsbedrock.ToolResultContentBlock{
+			{
+				Text: &combinedText,
+			},
+		}
+	default:
+		return nil, fmt.Errorf("unexpected content type for tool message: %T", openAiMessage.Content.Value)
+	}
+
 	return &awsbedrock.Message{
 		Role: role,
 		Content: []*awsbedrock.ContentBlock{
 			{
 				ToolResult: &awsbedrock.ToolResultBlock{
-					Content: []*awsbedrock.ToolResultContentBlock{
-						{
-							Text: openAiMessage.Content.Value.(*string),
-						},
-					},
+					Content: content,
 				},
 			},
 		},
