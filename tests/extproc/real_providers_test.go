@@ -54,12 +54,15 @@ func TestWithRealProviders(t *testing.T) {
 				Backends: []filterapi.Backend{
 					{Name: "aws-bedrock", Schema: awsBedrockSchema, Auth: &filterapi.BackendAuth{AWSAuth: &filterapi.AWSAuth{
 						CredentialFileName: cc.awsFilePath,
-						Region:             "us-east-1",
+						Region:             "eu-central-1",
+						//Region:             "us-east-1",
 					}}},
 				},
 				Headers: []filterapi.HeaderMatch{
-					{Name: "x-model-name", Value: "us.meta.llama3-2-1b-instruct-v1:0"},
-					{Name: "x-model-name", Value: "us.anthropic.claude-3-5-sonnet-20240620-v1:0"},
+					{Name: "x-model-name", Value: "eu.meta.llama3-2-1b-instruct-v1:0"},
+					{Name: "x-model-name", Value: "eu.anthropic.claude-3-5-sonnet-20240620-v1:0"},
+					//{Name: "x-model-name", Value: "us.meta.llama3-2-1b-instruct-v1:0"},
+					//{Name: "x-model-name", Value: "us.anthropic.claude-3-5-sonnet-20240620-v1:0"},
 				},
 			},
 		},
@@ -67,37 +70,38 @@ func TestWithRealProviders(t *testing.T) {
 
 	requireExtProc(t, os.Stdout, extProcExecutablePath(), configPath)
 
-	//t.Run("health-checking", func(t *testing.T) {
-	//	client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
-	//	for _, tc := range []realProvidersTestCase{
-	//		{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
-	//		{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
-	//	} {
-	//		t.Run(tc.modelName, func(t *testing.T) {
-	//			cc.maybeSkip(t, tc.required)
-	//			require.Eventually(t, func() bool {
-	//				chatCompletion, err := client.Chat.Completions.New(t.Context(), openai.ChatCompletionNewParams{
-	//					Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
-	//						openai.UserMessage("Say this is a test"),
-	//					}),
-	//					Model: openai.F(tc.modelName),
-	//				})
-	//				if err != nil {
-	//					t.Logf("error: %v", err)
-	//					return false
-	//				}
-	//				nonEmptyCompletion := false
-	//				for _, choice := range chatCompletion.Choices {
-	//					t.Logf("choice: %s", choice.Message.Content)
-	//					if choice.Message.Content != "" {
-	//						nonEmptyCompletion = true
-	//					}
-	//				}
-	//				return nonEmptyCompletion
-	//			}, 30*time.Second, 2*time.Second)
-	//		})
-	//	}
-	//})
+	t.Run("health-checking", func(t *testing.T) {
+		client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
+		for _, tc := range []realProvidersTestCase{
+			{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
+			{name: "aws-bedrock", modelName: "eu.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
+			//{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
+		} {
+			t.Run(tc.modelName, func(t *testing.T) {
+				cc.maybeSkip(t, tc.required)
+				require.Eventually(t, func() bool {
+					chatCompletion, err := client.Chat.Completions.New(t.Context(), openai.ChatCompletionNewParams{
+						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
+							openai.UserMessage("Say this is a test"),
+						}),
+						Model: openai.F(tc.modelName),
+					})
+					if err != nil {
+						t.Logf("error: %v", err)
+						return false
+					}
+					nonEmptyCompletion := false
+					for _, choice := range chatCompletion.Choices {
+						t.Logf("choice: %s", choice.Message.Content)
+						if choice.Message.Content != "" {
+							nonEmptyCompletion = true
+						}
+					}
+					return nonEmptyCompletion
+				}, 30*time.Second, 2*time.Second)
+			})
+		}
+	})
 	//
 	//// Read all access logs and check if the used token is logged.
 	//// If the used token is set correctly in the metadata, it should be logged in the access log.
@@ -194,7 +198,8 @@ func TestWithRealProviders(t *testing.T) {
 			testCaseName,
 			modelName string
 		}{
-			{testCaseName: "aws-bedrock", modelName: "us.anthropic.claude-3-5-sonnet-20240620-v1:0"}, // This will go to "aws-bedrock" using credentials file.
+			{testCaseName: "aws-bedrock", modelName: "eu.anthropic.claude-3-5-sonnet-20240620-v1:0"}, // This will go to "aws-bedrock" using credentials file.
+			//{testCaseName: "aws-bedrock", modelName: "us.anthropic.claude-3-5-sonnet-20240620-v1:0"}, // This will go to "aws-bedrock" using credentials file.
 		} {
 			t.Run(tc.modelName, func(t *testing.T) {
 				fmt.Println("inside run")
@@ -309,12 +314,17 @@ func TestWithRealProviders(t *testing.T) {
 			}
 			assert.NoError(c, it.Err())
 		}, 30*time.Second, 2*time.Second)
-
 		require.Equal(t, []string{
 			"gpt-4o-mini",
-			"us.meta.llama3-2-1b-instruct-v1:0",
-			"us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+			"eu.meta.llama3-2-1b-instruct-v1:0",
+			"eu.anthropic.claude-3-5-sonnet-20240620-v1:0",
 		}, models)
+
+		//require.Equal(t, []string{
+		//	"gpt-4o-mini",
+		//	"us.meta.llama3-2-1b-instruct-v1:0",
+		//	"us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+		//}, models)
 	})
 }
 
