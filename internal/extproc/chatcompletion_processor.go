@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,17 +19,21 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/envoyproxy/ai-gateway/filterapi"
+	"github.com/envoyproxy/ai-gateway/internal/apischema/openai"
 	"github.com/envoyproxy/ai-gateway/internal/extproc/translator"
 	"github.com/envoyproxy/ai-gateway/internal/llmcostcel"
 )
 
-// NewChatCompletionProcessor implements [ProcessorIface] for the /chat/completions endpoint.
-func NewChatCompletionProcessor(config *processorConfig, requestHeaders map[string]string, logger *slog.Logger) ProcessorIface {
+// NewChatCompletionProcessor implements [Processor] for the /chat/completions endpoint.
+func NewChatCompletionProcessor(config *processorConfig, requestHeaders map[string]string, logger *slog.Logger) (Processor, error) {
+	if config.schema.Name != filterapi.APISchemaOpenAI {
+		return nil, fmt.Errorf("unsupported API schema: %s", config.schema.Name)
+	}
 	return &chatCompletionProcessor{
 		config:         config,
 		requestHeaders: requestHeaders,
 		logger:         logger,
-	}
+	}, nil
 }
 
 // chatCompletionProcessor handles the processing of the request and response messages for a single stream.
@@ -60,7 +65,7 @@ func (c *chatCompletionProcessor) selectTranslator(out filterapi.VersionedAPISch
 	return nil
 }
 
-// ProcessRequestHeaders implements [ProcessorIface.ProcessRequestHeaders].
+// ProcessRequestHeaders implements [Processor.ProcessRequestHeaders].
 func (c *chatCompletionProcessor) ProcessRequestHeaders(_ context.Context, _ *corev3.HeaderMap) (res *extprocv3.ProcessingResponse, err error) {
 	// The request headers have already been at the time the processor was created
 	return &extprocv3.ProcessingResponse{Response: &extprocv3.ProcessingResponse_RequestHeaders{
@@ -68,14 +73,13 @@ func (c *chatCompletionProcessor) ProcessRequestHeaders(_ context.Context, _ *co
 	}}, nil
 }
 
-// ProcessRequestBody implements [ProcessorIface.ProcessRequestBody].
+// ProcessRequestBody implements [Processor.ProcessRequestBody].
 func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBody *extprocv3.HttpBody) (res *extprocv3.ProcessingResponse, err error) {
-	path := c.requestHeaders[":path"]
-	model, body, err := c.config.bodyParser(path, rawBody)
+	model, body, err := parseOpenAIChatCompletionBody(rawBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse request body: %w", err)
 	}
-	c.logger.Info("Processing request", "path", path, "model", model)
+	c.logger.Info("Processing request", "path", c.requestHeaders[":path"], "model", model)
 
 	c.requestHeaders[c.config.modelNameHeaderKey] = model
 	b, err := c.config.router.Calculate(c.requestHeaders)
@@ -124,7 +128,7 @@ func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBod
 	return resp, nil
 }
 
-// ProcessResponseHeaders implements [ProcessorIface.ProcessResponseHeaders].
+// ProcessResponseHeaders implements [Processor.ProcessResponseHeaders].
 func (c *chatCompletionProcessor) ProcessResponseHeaders(_ context.Context, headers *corev3.HeaderMap) (res *extprocv3.ProcessingResponse, err error) {
 	c.responseHeaders = headersToMap(headers)
 	if enc := c.responseHeaders["content-encoding"]; enc != "" {
@@ -148,7 +152,7 @@ func (c *chatCompletionProcessor) ProcessResponseHeaders(_ context.Context, head
 	}}, nil
 }
 
-// ProcessResponseBody implements [ProcessorIface.ProcessResponseBody].
+// ProcessResponseBody implements [Processor.ProcessResponseBody].
 func (c *chatCompletionProcessor) ProcessResponseBody(_ context.Context, body *extprocv3.HttpBody) (res *extprocv3.ProcessingResponse, err error) {
 	var br io.Reader
 	switch c.responseEncoding {
@@ -195,6 +199,14 @@ func (c *chatCompletionProcessor) ProcessResponseBody(_ context.Context, body *e
 	return resp, nil
 }
 
+func parseOpenAIChatCompletionBody(body *extprocv3.HttpBody) (modelName string, rb translator.RequestBody, err error) {
+	var openAIReq openai.ChatCompletionRequest
+	if err := json.Unmarshal(body.Body, &openAIReq); err != nil {
+		return "", nil, fmt.Errorf("failed to unmarshal body: %w", err)
+	}
+	return openAIReq.Model, &openAIReq, nil
+}
+
 func (c *chatCompletionProcessor) maybeBuildDynamicMetadata() (*structpb.Struct, error) {
 	metadata := make(map[string]*structpb.Value, len(c.config.requestCosts))
 	for i := range c.config.requestCosts {
@@ -207,7 +219,7 @@ func (c *chatCompletionProcessor) maybeBuildDynamicMetadata() (*structpb.Struct,
 			cost = c.costs.OutputTokens
 		case filterapi.LLMRequestCostTypeTotalToken:
 			cost = c.costs.TotalTokens
-		case filterapi.LLMRequestCostTypeCELExpression:
+		case filterapi.LLMRequestCostTypeCEL:
 			costU64, err := llmcostcel.EvaluateProgram(
 				rc.celProg,
 				c.requestHeaders[c.config.modelNameHeaderKey],

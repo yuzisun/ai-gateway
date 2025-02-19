@@ -36,7 +36,7 @@ const (
 
 var sensitiveHeaderKeys = []string{"authorization"}
 
-// Server implements the external process server.
+// Server implements the external processor server.
 type Server struct {
 	logger     *slog.Logger
 	config     *processorConfig
@@ -54,11 +54,7 @@ func NewServer(logger *slog.Logger) (*Server, error) {
 
 // LoadConfig updates the configuration of the external processor.
 func (s *Server) LoadConfig(ctx context.Context, config *filterapi.Config) error {
-	bodyParser, err := router.NewRequestBodyParser(config.Schema)
-	if err != nil {
-		return fmt.Errorf("cannot create request body parser: %w", err)
-	}
-	rt, err := router.NewRouter(config, x.NewCustomRouter)
+	rt, err := router.New(config, x.NewCustomRouter)
 	if err != nil {
 		return fmt.Errorf("cannot create router: %w", err)
 	}
@@ -94,8 +90,8 @@ func (s *Server) LoadConfig(ctx context.Context, config *filterapi.Config) error
 	for i := range config.LLMRequestCosts {
 		c := &config.LLMRequestCosts[i]
 		var prog cel.Program
-		if c.CELExpression != "" {
-			prog, err = llmcostcel.NewProgram(c.CELExpression)
+		if c.CEL != "" {
+			prog, err = llmcostcel.NewProgram(c.CEL)
 			if err != nil {
 				return fmt.Errorf("cannot create CEL program for cost: %w", err)
 			}
@@ -104,8 +100,9 @@ func (s *Server) LoadConfig(ctx context.Context, config *filterapi.Config) error
 	}
 
 	newConfig := &processorConfig{
-		uuid:       config.UUID,
-		bodyParser: bodyParser, router: rt,
+		uuid:                     config.UUID,
+		schema:                   config.Schema,
+		router:                   rt,
 		selectedBackendHeaderKey: config.SelectedBackendHeaderKey,
 		modelNameHeaderKey:       config.ModelNameHeaderKey,
 		backendAuthHandlers:      backendAuthHandlers,
@@ -124,13 +121,13 @@ func (s *Server) Register(path string, newProcessor ProcessorFactory) {
 
 // processorForPath returns the processor for the given path.
 // Only exact path matching is supported currently
-func (s *Server) processorForPath(requestHeaders map[string]string) (ProcessorIface, error) {
+func (s *Server) processorForPath(requestHeaders map[string]string) (Processor, error) {
 	path := requestHeaders[":path"]
 	newProcessor, ok := s.processors[path]
 	if !ok {
 		return nil, fmt.Errorf("no processor defined for path: %v", path)
 	}
-	return newProcessor(s.config, requestHeaders, s.logger), nil
+	return newProcessor(s.config, requestHeaders, s.logger)
 }
 
 // Process implements [extprocv3.ExternalProcessorServer].
@@ -140,7 +137,7 @@ func (s *Server) Process(stream extprocv3.ExternalProcessor_ProcessServer) error
 
 	// The processor will be instantiated when the first message containing the request headers is received.
 	// The :path header is used to determine the processor to use, based on the registered ones.
-	var p ProcessorIface
+	var p Processor
 
 	for {
 		select {
@@ -182,7 +179,7 @@ func (s *Server) Process(stream extprocv3.ExternalProcessor_ProcessServer) error
 	}
 }
 
-func (s *Server) processMsg(ctx context.Context, p ProcessorIface, req *extprocv3.ProcessingRequest) (*extprocv3.ProcessingResponse, error) {
+func (s *Server) processMsg(ctx context.Context, p Processor, req *extprocv3.ProcessingRequest) (*extprocv3.ProcessingResponse, error) {
 	switch value := req.Request.(type) {
 	case *extprocv3.ProcessingRequest_RequestHeaders:
 		requestHdrs := req.GetRequestHeaders().Headers

@@ -19,17 +19,16 @@ import (
 
 	"github.com/envoyproxy/ai-gateway/filterapi"
 	"github.com/envoyproxy/ai-gateway/filterapi/x"
-	"github.com/envoyproxy/ai-gateway/internal/extproc/router"
 	"github.com/envoyproxy/ai-gateway/internal/extproc/translator"
 )
 
 var (
-	_ ProcessorIface        = &mockProcessor{}
+	_ Processor             = &mockProcessor{}
 	_ translator.Translator = &mockTranslator{}
 	_ x.Router              = &mockRouter{}
 )
 
-func newMockProcessor(_ *processorConfig, _ *slog.Logger) ProcessorIface {
+func newMockProcessor(_ *processorConfig, _ *slog.Logger) Processor {
 	return &mockProcessor{}
 }
 
@@ -42,25 +41,25 @@ type mockProcessor struct {
 	retErr                error
 }
 
-// ProcessRequestHeaders implements [ProcessorIface.ProcessRequestHeaders].
+// ProcessRequestHeaders implements [Processor.ProcessRequestHeaders].
 func (m mockProcessor) ProcessRequestHeaders(_ context.Context, headerMap *corev3.HeaderMap) (*extprocv3.ProcessingResponse, error) {
 	require.Equal(m.t, m.expHeaderMap, headerMap)
 	return m.retProcessingResponse, m.retErr
 }
 
-// ProcessRequestBody implements [ProcessorIface.ProcessRequestBody].
+// ProcessRequestBody implements [Processor.ProcessRequestBody].
 func (m mockProcessor) ProcessRequestBody(_ context.Context, body *extprocv3.HttpBody) (*extprocv3.ProcessingResponse, error) {
 	require.Equal(m.t, m.expBody, body)
 	return m.retProcessingResponse, m.retErr
 }
 
-// ProcessResponseHeaders implements [ProcessorIface.ProcessResponseHeaders].
+// ProcessResponseHeaders implements [Processor.ProcessResponseHeaders].
 func (m mockProcessor) ProcessResponseHeaders(_ context.Context, headerMap *corev3.HeaderMap) (*extprocv3.ProcessingResponse, error) {
 	require.Equal(m.t, m.expHeaderMap, headerMap)
 	return m.retProcessingResponse, m.retErr
 }
 
-// ProcessResponseBody implements [ProcessorIface.ProcessResponseBody].
+// ProcessResponseBody implements [Processor.ProcessResponseBody].
 func (m mockProcessor) ProcessResponseBody(_ context.Context, body *extprocv3.HttpBody) (*extprocv3.ProcessingResponse, error) {
 	require.Equal(m.t, m.expBody, body)
 	return m.retProcessingResponse, m.retErr
@@ -70,7 +69,7 @@ func (m mockProcessor) ProcessResponseBody(_ context.Context, body *extprocv3.Ht
 type mockTranslator struct {
 	t                 *testing.T
 	expHeaders        map[string]string
-	expRequestBody    router.RequestBody
+	expRequestBody    translator.RequestBody
 	expResponseBody   *extprocv3.HttpBody
 	retHeaderMutation *extprocv3.HeaderMutation
 	retBodyMutation   *extprocv3.BodyMutation
@@ -80,7 +79,7 @@ type mockTranslator struct {
 }
 
 // RequestBody implements [translator.Translator.RequestBody].
-func (m mockTranslator) RequestBody(body router.RequestBody) (headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, override *extprocv3http.ProcessingMode, err error) {
+func (m mockTranslator) RequestBody(body translator.RequestBody) (headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, override *extprocv3http.ProcessingMode, err error) {
 	require.Equal(m.t, m.expRequestBody, body)
 	return m.retHeaderMutation, m.retBodyMutation, m.retOverride, m.retErr
 }
@@ -125,23 +124,6 @@ func (m mockRouter) Calculate(headers map[string]string) (*filterapi.Backend, er
 	require.Equal(m.t, m.expHeaders, headers)
 	b := &filterapi.Backend{Name: m.retBackendName, Schema: m.retVersionedAPISchema}
 	return b, m.retErr
-}
-
-// mockRequestBodyParser implements [router.RequestBodyParser] for testing.
-type mockRequestBodyParser struct {
-	t            *testing.T
-	expPath      string
-	expBody      []byte
-	retModelName string
-	retRb        router.RequestBody
-	retErr       error
-}
-
-// impl implements [router.RequestBodyParser].
-func (m *mockRequestBodyParser) impl(path string, body *extprocv3.HttpBody) (modelName string, rb router.RequestBody, err error) {
-	require.Equal(m.t, m.expPath, path)
-	require.Equal(m.t, m.expBody, body.Body)
-	return m.retModelName, m.retRb, m.retErr
 }
 
 // mockExternalProcessingStream implements [extprocv3.ExternalProcessor_ProcessServer] for testing.
