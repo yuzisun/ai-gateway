@@ -25,6 +25,9 @@ const (
 	egLatest      = "v0.0.0-latest" // This defaults to the latest dev version.
 	egNamespace   = "envoy-gateway-system"
 	egDefaultPort = 10080
+
+	kindClusterName = "envoy-ai-gateway"
+	kindLogDir      = "./logs"
 )
 
 var egVersion = func() string {
@@ -35,8 +38,19 @@ var egVersion = func() string {
 	}
 }()
 
+// By default, kind logs are collected when the e2e tests fail. The TEST_KEEP_CLUSTER environment variable
+// can be set to "true" to preserve the logs and the kind cluster even if the tests pass.
+var keepCluster = func() bool {
+	v, _ := os.LookupEnv("TEST_KEEP_CLUSTER")
+	return v == "true"
+}()
+
 func initLog(msg string) {
 	fmt.Printf("\u001b[32m=== INIT LOG: %s\u001B[0m\n", msg)
+}
+
+func cleanupLog(msg string) {
+	fmt.Printf("\u001b[32m=== CLEANUP LOG: %s\u001B[0m\n", msg)
 }
 
 func TestMain(m *testing.M) {
@@ -45,6 +59,13 @@ func TestMain(m *testing.M) {
 	// The following code sets up the kind cluster, installs the Envoy Gateway, and installs the AI Gateway.
 	// They must be idempotent and can be run multiple times so that we can run the tests multiple times on
 	// failures.
+
+	defer func() {
+		// If the setup or some tests panic, try to collect the cluster logs
+		if r := recover(); r != nil {
+			cleanupKindCluster(true)
+		}
+	}()
 
 	if err := initKindCluster(ctx); err != nil {
 		cancel()
@@ -68,12 +89,13 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 	cancel()
+
+	cleanupKindCluster(code != 0)
+
 	os.Exit(code)
 }
 
 func initKindCluster(ctx context.Context) (err error) {
-	const kindClusterName = "envoy-ai-gateway"
-
 	initLog("Setting up the kind cluster")
 	start := time.Now()
 	defer func() {
@@ -81,7 +103,7 @@ func initKindCluster(ctx context.Context) (err error) {
 		initLog(fmt.Sprintf("\tdone (took %.2fs in total)", elapsed.Seconds()))
 	}()
 
-	initLog("\tCreating kind cluster named envoy-ai-gateway")
+	initLog(fmt.Sprintf("\tCreating kind cluster named %s", kindClusterName))
 	cmd := exec.CommandContext(ctx, "go", "tool", "kind", "create", "cluster", "--name", kindClusterName)
 	out, err := cmd.CombinedOutput()
 	if err != nil && !bytes.Contains(out, []byte("already exist")) {
@@ -89,7 +111,7 @@ func initKindCluster(ctx context.Context) (err error) {
 		return
 	}
 
-	initLog("\tSwitching kubectl context to envoy-ai-gateway")
+	initLog(fmt.Sprintf("\tSwitching kubectl context to %s", kindClusterName))
 	cmd = exec.CommandContext(ctx, "go", "tool", "kind", "export", "kubeconfig", "--name", kindClusterName)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -111,6 +133,23 @@ func initKindCluster(ctx context.Context) (err error) {
 		}
 	}
 	return nil
+}
+
+func cleanupKindCluster(testsFailed bool) {
+	if testsFailed || keepCluster {
+		cleanupLog("Collecting logs from the kind cluster")
+		cmd := exec.Command("go", "tool", "kind", "export", "logs", "--name", kindClusterName, kindLogDir)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		_ = cmd.Run()
+	}
+	if !testsFailed && !keepCluster {
+		cleanupLog("Destroying the kind cluster")
+		cmd := exec.Command("go", "tool", "kind", "delete", "cluster", "--name", kindClusterName)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		_ = cmd.Run()
+	}
 }
 
 // initEnvoyGateway initializes the Envoy Gateway in the kind cluster following the quickstart guide:
@@ -240,14 +279,14 @@ func requireWaitForPodReadyWithTimeout(t *testing.T, namespace, labelSelector st
 	// This repeats the wait subcommand in order to be able to wait for the
 	// resources not created yet.
 	require.Eventually(t, func() bool {
-		cmd := kubectl(context.Background(), "wait", "--timeout=2s", "-n", namespace,
+		cmd := kubectl(t.Context(), "wait", "--timeout=2s", "-n", namespace,
 			"pods", "--for=condition=Ready", "-l", labelSelector)
 		return cmd.Run() == nil
 	}, timeout, 5*time.Second)
 }
 
 func requireNewHTTPPortForwarder(t *testing.T, namespace string, selector string, port int) portForwarder {
-	f, err := newPodPortForwarder(context.Background(), namespace, selector, port)
+	f, err := newPodPortForwarder(t.Context(), namespace, selector, port)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		conn, err := http.Get(f.address())

@@ -14,13 +14,10 @@ spec:
 #    region: us-east-1
     region: us-central-1
     oidcExchangeToken:
+      awsRoleArn: placeholder
       oidc:
         provider:
           issuer: placeholder
         clientID: placeholder
         clientSecret:
           name: placeholder
-    credentialsFile:
-      secretRef:
-        name: placeholder
-      profile: default

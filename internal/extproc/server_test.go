@@ -31,26 +31,18 @@ func requireNewServerWithMockProcessor(t *testing.T) (*Server, *mockProcessor) {
 	s.config = &processorConfig{}
 
 	m := newMockProcessor(s.config, s.logger)
-	s.Register("/", func(*processorConfig, map[string]string, *slog.Logger) ProcessorIface { return m })
+	s.Register("/", func(*processorConfig, map[string]string, *slog.Logger) (Processor, error) { return m, nil })
 
 	return s, m.(*mockProcessor)
 }
 
 func TestServer_LoadConfig(t *testing.T) {
-	t.Run("invalid input schema", func(t *testing.T) {
-		s, _ := requireNewServerWithMockProcessor(t)
-		err := s.LoadConfig(t.Context(), &filterapi.Config{
-			Schema: filterapi.VersionedAPISchema{Name: "some-invalid-schema"},
-		})
-		require.Error(t, err)
-		require.ErrorContains(t, err, "cannot create request body parser")
-	})
 	t.Run("ok", func(t *testing.T) {
 		config := &filterapi.Config{
 			MetadataNamespace: "ns",
 			LLMRequestCosts: []filterapi.LLMRequestCost{
 				{MetadataKey: "key", Type: filterapi.LLMRequestCostTypeOutputToken},
-				{MetadataKey: "cel_key", Type: filterapi.LLMRequestCostTypeCELExpression, CELExpression: "1 + 1"},
+				{MetadataKey: "cel_key", Type: filterapi.LLMRequestCostTypeCEL, CEL: "1 + 1"},
 			},
 			Schema:                   filterapi.VersionedAPISchema{Name: filterapi.APISchemaOpenAI},
 			SelectedBackendHeaderKey: "x-ai-eg-selected-backend",
@@ -88,15 +80,15 @@ func TestServer_LoadConfig(t *testing.T) {
 		require.NotNil(t, s.config)
 		require.Equal(t, "ns", s.config.metadataNamespace)
 		require.NotNil(t, s.config.router)
-		require.NotNil(t, s.config.bodyParser)
+		require.Equal(t, s.config.schema, config.Schema)
 		require.Equal(t, "x-ai-eg-selected-backend", s.config.selectedBackendHeaderKey)
 		require.Equal(t, "x-model-name", s.config.modelNameHeaderKey)
 
 		require.Len(t, s.config.requestCosts, 2)
 		require.Equal(t, filterapi.LLMRequestCostTypeOutputToken, s.config.requestCosts[0].Type)
 		require.Equal(t, "key", s.config.requestCosts[0].MetadataKey)
-		require.Equal(t, filterapi.LLMRequestCostTypeCELExpression, s.config.requestCosts[1].Type)
-		require.Equal(t, "1 + 1", s.config.requestCosts[1].CELExpression)
+		require.Equal(t, filterapi.LLMRequestCostTypeCEL, s.config.requestCosts[1].Type)
+		require.Equal(t, "1 + 1", s.config.requestCosts[1].CEL)
 		prog := s.config.requestCosts[1].celProg
 		require.NotNil(t, prog)
 		val, err := llmcostcel.EvaluateProgram(prog, "", "", 1, 1, 1)
@@ -266,20 +258,20 @@ func TestServer_ProcessorSelection(t *testing.T) {
 	require.NotNil(t, s)
 
 	s.config = &processorConfig{}
-	s.Register("/one", func(*processorConfig, map[string]string, *slog.Logger) ProcessorIface {
+	s.Register("/one", func(*processorConfig, map[string]string, *slog.Logger) (Processor, error) {
 		// Returning nil guarantees that the test will fail if this processor is selected
-		return nil
+		return nil, nil
 	})
-	s.Register("/two", func(*processorConfig, map[string]string, *slog.Logger) ProcessorIface {
+	s.Register("/two", func(*processorConfig, map[string]string, *slog.Logger) (Processor, error) {
 		return &mockProcessor{
 			t:                     t,
 			expHeaderMap:          &corev3.HeaderMap{Headers: []*corev3.HeaderValue{{Key: ":path", Value: "/two"}}},
 			retProcessingResponse: &extprocv3.ProcessingResponse{Response: &extprocv3.ProcessingResponse_RequestHeaders{}},
-		}
+		}, nil
 	})
 
 	t.Run("unknown path", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 		defer cancel()
 
 		req := &extprocv3.ProcessingRequest{
@@ -298,7 +290,7 @@ func TestServer_ProcessorSelection(t *testing.T) {
 	})
 
 	t.Run("known path", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 		defer cancel()
 
 		req := &extprocv3.ProcessingRequest{

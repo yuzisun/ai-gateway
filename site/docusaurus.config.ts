@@ -31,6 +31,11 @@ const config: Config = {
     locales: ['en'],
   },
 
+  markdown: {
+    mermaid: true,
+  },
+
+  themes: ['@docusaurus/theme-mermaid'],
 
   presets: [
     [
@@ -38,8 +43,12 @@ const config: Config = {
       {
         docs: {
           sidebarPath: './sidebars.ts',
+          remarkPlugins: [
+            [require('@docusaurus/theme-mermaid'), {}],
+          ],
         },
         blog: {
+          path: 'blog',
           showReadingTime: true,
           feedOptions: {
             type: ['rss', 'atom'],

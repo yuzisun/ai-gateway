@@ -9,9 +9,10 @@ First of all, there are only three minimal prerequisites to contribute to the pr
 * `make`
 * `docker`
 
-which we assume you already have installed on your machine.
+which we assume you already have installed on your machine. Also, on macOS, you would need to install
+`brew install ca-certificates` to run some integration tests.
 
-Assuming you have already cloned the repository on a local machine either MacOS or some Linux distribution,
+Assuming you have already cloned the repository on a local machine either macOS or some Linux distribution,
 the only make targets you would need to run are listed via
 
 ```
@@ -27,6 +28,12 @@ the list of commands that you can run to build, test, and run the project.
 For example, `make precommit test` will run the precommit checks and the unit tests.
 These are the must-run commands before you submit or pushing commits to a PR.
 If anything goes wrong, please try to run `make clean` and then run the command again.
+
+You can make `make precommit` a git pre-commit hook by moving this file.
+
+```shell
+cp pre-commit.sh .git/hooks/pre-commit
+```
 
 All test targets are prefixed with `test-*` and can be run via `make test-<target>`.
 
