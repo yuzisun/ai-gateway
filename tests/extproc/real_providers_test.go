@@ -238,13 +238,6 @@ func TestWithRealProviders(t *testing.T) {
 						return false
 					}
 					// Step 2: Verify tool call
-					// TODO: remove after test debugging done done
-					returnsToolCall := false
-					for _, choice := range completion.Choices {
-						if choice.FinishReason == openai.ChatCompletionChoicesFinishReasonToolCalls {
-							returnsToolCall = true
-						}
-					}
 					if returnsToolCall == false {
 						t.Logf("Tool call not returned")
 						return false
