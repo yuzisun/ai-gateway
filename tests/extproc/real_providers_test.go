@@ -229,12 +229,10 @@ func TestWithRealProviders(t *testing.T) {
 							},
 						}),
 						// TODO: check if we should seed.
-						//Seed:  openai.Int(0),
+						Seed:  openai.Int(0),
 						Model: openai.F(tc.modelName),
 					}
-					fmt.Println("after params set")
 					completion, err := client.Chat.Completions.New(context.Background(), params)
-					fmt.Println("after completion")
 					if err != nil {
 						t.Logf("error: %v", err)
 						return false
@@ -243,9 +241,6 @@ func TestWithRealProviders(t *testing.T) {
 					// TODO: remove after test debugging done done
 					returnsToolCall := false
 					for _, choice := range completion.Choices {
-						t.Logf("choice content: %s", choice.Message.Content)
-						t.Logf("finish reason: %s", choice.FinishReason)
-						t.Logf("choice toolcall: %v", choice.Message.ToolCalls)
 						if choice.FinishReason == openai.ChatCompletionChoicesFinishReasonToolCalls {
 							returnsToolCall = true
 						}
@@ -293,7 +288,7 @@ func TestWithRealProviders(t *testing.T) {
 					// Step 4: Verify that the second response is correct
 					completionResult := secondChatCompletion.Choices[0].Message.Content
 					t.Logf("content of completion response using tool: %s", secondChatCompletion.Choices[0].Message.Content)
-					return completionResult == "The weather in Paris is currently sunny and 25°C."
+					return completionResult == "The weather in New York City is currently sunny and 25°C."
 				}, 500*time.Second, 200*time.Second)
 			})
 		}
