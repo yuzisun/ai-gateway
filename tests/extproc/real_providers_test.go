@@ -238,10 +238,6 @@ func TestWithRealProviders(t *testing.T) {
 						return false
 					}
 					// Step 2: Verify tool call
-					if returnsToolCall == false {
-						t.Logf("Tool call not returned")
-						return false
-					}
 					toolCalls := completion.Choices[0].Message.ToolCalls
 					if len(toolCalls) == 0 {
 						t.Logf("Expected tool call from completion result but got none")
