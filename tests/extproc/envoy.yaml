@@ -132,14 +132,14 @@ static_resources:
                   address:
                     socket_address:
 #                      address: bedrock-runtime.us-east-1.amazonaws.com
-                      address: bedrock-runtime.us-central-1.amazonaws.com
+                      address: bedrock-runtime.eu-central-1.amazonaws.com
                       port_value: 443
       transport_socket:
         name: envoy.transport_sockets.tls
         typed_config:
           "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
 #          sni: bedrock-runtime.us-east-1.amazonaws.com
-          sni: bedrock-runtime.us-central-1.amazonaws.com
+          sni: bedrock-runtime.eu-central-1.amazonaws.com
     - name: openai
       connect_timeout: 30s
       type: STRICT_DNS
