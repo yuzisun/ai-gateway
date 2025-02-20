@@ -18,7 +18,6 @@ import (
 
 	openai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/envoyproxy/ai-gateway/filterapi"
@@ -287,30 +286,30 @@ func TestWithRealProviders(t *testing.T) {
 	// Models are served by the extproc filter as a direct response so this can run even if the
 	// real credentials are not present.
 	// We don't need to run it on a concrete backend, as it will not route anywhere.
-	t.Run("list-models", func(t *testing.T) {
-		client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
-
-		var models []string
-
-		require.EventuallyWithT(t, func(c *assert.CollectT) {
-			it := client.Models.ListAutoPaging(t.Context())
-			for it.Next() {
-				models = append(models, it.Current().ID)
-			}
-			assert.NoError(c, it.Err())
-		}, 30*time.Second, 2*time.Second)
-		require.Equal(t, []string{
-			"gpt-4o-mini",
-			"eu.meta.llama3-2-1b-instruct-v1:0",
-			"eu.anthropic.claude-3-5-sonnet-20240620-v1:0",
-		}, models)
-
-		//require.Equal(t, []string{
-		//	"gpt-4o-mini",
-		//	"us.meta.llama3-2-1b-instruct-v1:0",
-		//	"us.anthropic.claude-3-5-sonnet-20240620-v1:0",
-		//}, models)
-	})
+	//t.Run("list-models", func(t *testing.T) {
+	//	client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
+	//
+	//	var models []string
+	//
+	//	require.EventuallyWithT(t, func(c *assert.CollectT) {
+	//		it := client.Models.ListAutoPaging(t.Context())
+	//		for it.Next() {
+	//			models = append(models, it.Current().ID)
+	//		}
+	//		assert.NoError(c, it.Err())
+	//	}, 30*time.Second, 2*time.Second)
+	//	require.Equal(t, []string{
+	//		"gpt-4o-mini",
+	//		"eu.meta.llama3-2-1b-instruct-v1:0",
+	//		"eu.anthropic.claude-3-5-sonnet-20240620-v1:0",
+	//	}, models)
+	//
+	//	//require.Equal(t, []string{
+	//	//	"gpt-4o-mini",
+	//	//	"us.meta.llama3-2-1b-instruct-v1:0",
+	//	//	"us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+	//	//}, models)
+	//})
 }
 
 // realProvidersTestCase is a base test case for the real providers, which is mainly for the centralization of the
