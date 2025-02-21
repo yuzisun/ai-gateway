@@ -278,7 +278,7 @@ func TestWithRealProviders(t *testing.T) {
 					completionResult := secondChatCompletion.Choices[0].Message.Content
 					t.Logf("content of completion response using tool: %s", secondChatCompletion.Choices[0].Message.Content)
 					return completionResult == "The weather in New York City is currently sunny and 25°C."
-				}, 500*time.Second, 200*time.Second)
+				}, 100*time.Second, 50*time.Second)
 			})
 		}
 	})
