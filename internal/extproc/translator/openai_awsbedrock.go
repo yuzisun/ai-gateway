@@ -377,8 +377,10 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 	bedrockReq.Messages = make([]*awsbedrock.Message, 0, len(openAIReq.Messages))
 	for i := range openAIReq.Messages {
 		msg := &openAIReq.Messages[i]
+		fmt.Printf("\nassigning message role for %v and msg.Type %v\n", i, msg.Type)
 		switch msg.Type {
 		case openai.ChatMessageRoleUser:
+			fmt.Printf("\n %v is role user\n", i)
 			userMessage := msg.Value.(openai.ChatCompletionUserMessageParam)
 			bedrockMessage, err := o.openAIMessageToBedrockMessageRoleUser(&userMessage, msg.Type)
 			if err != nil {
@@ -386,6 +388,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 			}
 			bedrockReq.Messages = append(bedrockReq.Messages, bedrockMessage)
 		case openai.ChatMessageRoleAssistant:
+			fmt.Printf("\n %v is role assistant\n", i)
 			assistantMessage := msg.Value.(openai.ChatCompletionAssistantMessageParam)
 			bedrockMessage, err := o.openAIMessageToBedrockMessageRoleAssistant(&assistantMessage, msg.Type)
 			if err != nil {
@@ -393,6 +396,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 			}
 			bedrockReq.Messages = append(bedrockReq.Messages, bedrockMessage)
 		case openai.ChatMessageRoleSystem:
+			fmt.Printf("\n %v is role system\n", i)
 			if bedrockReq.System == nil {
 				bedrockReq.System = make([]*awsbedrock.SystemContentBlock, 0)
 			}
@@ -402,6 +406,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 				return err
 			}
 		case openai.ChatMessageRoleDeveloper:
+			fmt.Printf("\n %v is role developer\n", i)
 			message := msg.Value.(openai.ChatCompletionDeveloperMessageParam)
 			if bedrockReq.System == nil {
 				bedrockReq.System = []*awsbedrock.SystemContentBlock{}
@@ -412,7 +417,9 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 					Text: text,
 				})
 			} else {
+				fmt.Println("role is else")
 				if contents, ok := message.Content.Value.([]openai.ChatCompletionContentPartTextParam); ok {
+					fmt.Printf("\n %v casting contents \n", i)
 					for i := range contents {
 						contentPart := &contents[i]
 						textContentPart := contentPart.Text
@@ -425,6 +432,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 				}
 			}
 		case openai.ChatMessageRoleTool:
+			fmt.Printf("\n %v role tool \n", i)
 			toolMessage := msg.Value.(openai.ChatCompletionToolMessageParam)
 			// Bedrock does not support tool role, merging to the user role.
 			bedrockMessage, err := o.openAIMessageToBedrockMessageRoleTool(&toolMessage, awsbedrock.ConversationRoleUser)
