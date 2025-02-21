@@ -92,7 +92,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 			if c.Text != nil {
 				txt = *c.Text
 			}
-			fmt.Printf("c.txt: %v, \n c.toolresult: %v \n c.toolUse: %v \n msg.Role: %v \n %v", txt, c.ToolResult, c.ToolUse, msg.Role)
+			fmt.Printf("c.txt: %v, \n c.toolresult: %v \n c.toolUse: %v \n msg.Role: %v ", txt, c.ToolResult, c.ToolUse, msg.Role)
 		}
 	}
 
@@ -271,13 +271,14 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 	openAiMessage *openai.ChatCompletionAssistantMessageParam, role string,
 ) (*awsbedrock.Message, error) {
 	var bedrockMessage *awsbedrock.Message
-	contentBlocks := make([]*awsbedrock.ContentBlock, 1)
+	contentBlocks := []*awsbedrock.ContentBlock{}
+	fmt.Println("starting translation for assistant")
 	if openAiMessage.Content.Type == openai.ChatCompletionAssistantMessageParamContentTypeRefusal {
 		fmt.Println("Assistant role message content (refusal):", openAiMessage.Content.Refusal)
-		contentBlocks[0] = &awsbedrock.ContentBlock{Text: openAiMessage.Content.Refusal}
+		contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Refusal})
 	} else {
 		fmt.Println("Assistant role message content (text):", openAiMessage.Content.Text)
-		contentBlocks[0] = &awsbedrock.ContentBlock{Text: openAiMessage.Content.Text}
+		contentBlocks[0] = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Text})
 	}
 	bedrockMessage = &awsbedrock.Message{
 		Role:    role,
