@@ -457,7 +457,10 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 			if err != nil {
 				return err
 			}
-			bedrockReq.Messages = append(bedrockReq.Messages, bedrockMessage)
+			//bedrockReq.Messages = append(bedrockReq.Messages, bedrockMessage)
+			// return only the tool result
+			fmt.Println("returning only tool result")
+			bedrockReq.Messages = []*awsbedrock.Message{bedrockMessage}
 		default:
 			return fmt.Errorf("unexpected role: %s", msg.Type)
 		}
