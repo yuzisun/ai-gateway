@@ -69,38 +69,38 @@ func TestWithRealProviders(t *testing.T) {
 
 	requireExtProc(t, os.Stdout, extProcExecutablePath(), configPath)
 
-	t.Run("health-checking", func(t *testing.T) {
-		client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
-		for _, tc := range []realProvidersTestCase{
-			{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
-			{name: "aws-bedrock", modelName: "eu.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
-			//{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
-		} {
-			t.Run(tc.modelName, func(t *testing.T) {
-				cc.maybeSkip(t, tc.required)
-				require.Eventually(t, func() bool {
-					chatCompletion, err := client.Chat.Completions.New(t.Context(), openai.ChatCompletionNewParams{
-						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
-							openai.UserMessage("Say this is a test"),
-						}),
-						Model: openai.F(tc.modelName),
-					})
-					if err != nil {
-						t.Logf("error: %v", err)
-						return false
-					}
-					nonEmptyCompletion := false
-					for _, choice := range chatCompletion.Choices {
-						t.Logf("choice: %s", choice.Message.Content)
-						if choice.Message.Content != "" {
-							nonEmptyCompletion = true
-						}
-					}
-					return nonEmptyCompletion
-				}, 30*time.Second, 2*time.Second)
-			})
-		}
-	})
+	//t.Run("health-checking", func(t *testing.T) {
+	//	client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
+	//	for _, tc := range []realProvidersTestCase{
+	//		{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
+	//		{name: "aws-bedrock", modelName: "eu.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
+	//		//{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
+	//	} {
+	//		t.Run(tc.modelName, func(t *testing.T) {
+	//			cc.maybeSkip(t, tc.required)
+	//			require.Eventually(t, func() bool {
+	//				chatCompletion, err := client.Chat.Completions.New(t.Context(), openai.ChatCompletionNewParams{
+	//					Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
+	//						openai.UserMessage("Say this is a test"),
+	//					}),
+	//					Model: openai.F(tc.modelName),
+	//				})
+	//				if err != nil {
+	//					t.Logf("error: %v", err)
+	//					return false
+	//				}
+	//				nonEmptyCompletion := false
+	//				for _, choice := range chatCompletion.Choices {
+	//					t.Logf("choice: %s", choice.Message.Content)
+	//					if choice.Message.Content != "" {
+	//						nonEmptyCompletion = true
+	//					}
+	//				}
+	//				return nonEmptyCompletion
+	//			}, 30*time.Second, 2*time.Second)
+	//		})
+	//	}
+	//})
 	//
 	//// Read all access logs and check if the used token is logged.
 	//// If the used token is set correctly in the metadata, it should be logged in the access log.

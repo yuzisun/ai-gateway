@@ -267,6 +267,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 ) (*awsbedrock.Message, error) {
 	var bedrockMessage *awsbedrock.Message
 	contentBlocks := make([]*awsbedrock.ContentBlock, 1)
+	fmt.Println("creating content block in openAIMessageToBedrockMessageRoleAssistant")
 	if openAiMessage.Content.Type == openai.ChatCompletionAssistantMessageParamContentTypeRefusal {
 		contentBlocks[0] = &awsbedrock.ContentBlock{Text: openAiMessage.Content.Refusal}
 	} else {
