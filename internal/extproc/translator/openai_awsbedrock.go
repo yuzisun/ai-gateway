@@ -311,16 +311,35 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMessageRoleTool(
 	openAiMessage *openai.ChatCompletionToolMessageParam, role string,
 ) (*awsbedrock.Message, error) {
+	var content []*awsbedrock.ToolResultContentBlock
+
+	switch v := openAiMessage.Content.Value.(type) {
+	case string:
+		content = []*awsbedrock.ToolResultContentBlock{
+			{
+				Text: &v,
+			},
+		}
+	case []openai.ChatCompletionContentPartTextParam:
+		var combinedText string
+		for _, part := range v {
+			combinedText += part.Text
+		}
+		content = []*awsbedrock.ToolResultContentBlock{
+			{
+				Text: &combinedText,
+			},
+		}
+	default:
+		return nil, fmt.Errorf("unexpected content type for tool message: %T", openAiMessage.Content.Value)
+	}
+
 	return &awsbedrock.Message{
 		Role: role,
 		Content: []*awsbedrock.ContentBlock{
 			{
 				ToolResult: &awsbedrock.ToolResultBlock{
-					Content: []*awsbedrock.ToolResultContentBlock{
-						{
-							Text: openAiMessage.Content.Value.(*string),
-						},
-					},
+					Content: content,
 				},
 			},
 		},
@@ -481,6 +500,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseError(respHeaders
 	} else {
 		var buf []byte
 		buf, err = io.ReadAll(body)
+		fmt.Printf("\nprinting body from ResponseError:\n %v\n", string(buf))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read error body: %w", err)
 		}
@@ -548,6 +568,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 			mut.Body = append(mut.Body, oaiEventBytes...)
 			mut.Body = append(mut.Body, []byte("\n\n")...)
 		}
+		fmt.Printf("\nprinting mut.Body %v", string(mut.Body))
 
 		if endOfStream {
 			mut.Body = append(mut.Body, []byte("data: [DONE]\n")...)
@@ -559,6 +580,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 	if err = json.NewDecoder(body).Decode(&bedrockResp); err != nil {
 		return nil, nil, tokenUsage, fmt.Errorf("failed to unmarshal body: %w", err)
 	}
+	fmt.Printf("\nbedrock output message from converse: %v\n", len(bedrockResp.Output.Message.Content))
 
 	openAIResp := openai.ChatCompletionResponse{
 		Object:  "chat.completion",
@@ -577,18 +599,41 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 			CompletionTokens: bedrockResp.Usage.OutputTokens,
 		}
 	}
-	for i, output := range bedrockResp.Output.Message.Content {
+
+	// Merge bedrock response content into openai response choices
+	for i := 0; i < len(bedrockResp.Output.Message.Content); i++ {
+		output := bedrockResp.Output.Message.Content[i]
 		choice := openai.ChatCompletionResponseChoice{
 			Index: (int64)(i),
 			Message: openai.ChatCompletionResponseChoiceMessage{
-				Content: output.Text,
-				Role:    bedrockResp.Output.Message.Role,
+				Role: bedrockResp.Output.Message.Role,
 			},
 			FinishReason: o.bedrockStopReasonToOpenAIStopReason(bedrockResp.StopReason),
 		}
-		if toolCall := o.bedrockToolUseToOpenAICalls(output.ToolUse); toolCall != nil {
-			choice.Message.ToolCalls = []openai.ChatCompletionMessageToolCallParam{*toolCall}
+
+		if output.Text != nil {
+			choice.Message.Content = output.Text
 		}
+
+		if output.ToolUse != nil {
+			if toolCall := o.bedrockToolUseToOpenAICalls(output.ToolUse); toolCall != nil {
+				choice.Message.ToolCalls = []openai.ChatCompletionMessageToolCallParam{*toolCall}
+			}
+		}
+
+		// Check if the next element should be merged -
+		// A model may return the tool config in a separate message, 
+		// the message text + tool config should be merged for the openai responsed
+		if i+1 < len(bedrockResp.Output.Message.Content) {
+			nextOutput := bedrockResp.Output.Message.Content[i+1]
+			if nextOutput.Text == nil && nextOutput.ToolUse != nil {
+				if toolCall := o.bedrockToolUseToOpenAICalls(nextOutput.ToolUse); toolCall != nil {
+					choice.Message.ToolCalls = append(choice.Message.ToolCalls, *toolCall)
+				}
+				i++ // Skip the next element as it has been merged
+			}
+		}
+
 		openAIResp.Choices = append(openAIResp.Choices, choice)
 	}
 
