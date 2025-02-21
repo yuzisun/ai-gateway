@@ -88,7 +88,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 	//TODO: remove after testing
 	for _, msg := range bedrockReq.Messages {
 		for _, c := range msg.Content {
-			fmt.Printf("c.txt: %v, \n c.toolresult: %v \n c.toolUse: %v \n msg.Role: %v", *c.Text, *c.ToolResult, *c.ToolUse, msg.Role)
+			fmt.Printf("c.txt: %v, \n c.toolresult: %v \n c.toolUse: %v \n msg.Role: %v", c.Text, c.ToolResult, c.ToolUse, msg.Role)
 		}
 	}
 
