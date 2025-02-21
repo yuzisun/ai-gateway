@@ -278,7 +278,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 		contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Refusal})
 	} else {
 		fmt.Println("Assistant role message content (text):", openAiMessage.Content.Text)
-		contentBlocks[0] = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Text})
+		contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Text})
 	}
 	bedrockMessage = &awsbedrock.Message{
 		Role:    role,
@@ -300,6 +300,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 				},
 			})
 	}
+	fmt.Printf("\n length of assistant content block %v", len(bedrockMessage.Content))
 	return bedrockMessage, nil
 }
 
