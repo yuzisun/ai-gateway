@@ -1,5 +1,7 @@
 provider "aws" {
-  region = "us-east-1"
+#   region = "us-east-1"
+  region = "eu-central-1"
+
 }
 
 resource "aws_iam_user" "envoy_ai_gateway_ci_user" {

@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openai/openai-go"
+	openai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/stretchr/testify/require"
 

@@ -85,6 +85,17 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	//TODO: remove after testing
+	for _, msg := range bedrockReq.Messages {
+		for _, c := range msg.Content {
+			txt := ""
+			if c.Text != nil {
+				txt = *c.Text
+			}
+			fmt.Printf("c.txt: %v, \n c.toolresult: %v \n c.toolUse: %v \n msg.Role: %v ", txt, c.ToolResult, c.ToolUse, msg.Role)
+		}
+	}
+
 	// Convert ToolConfiguration.
 	if len(openAIReq.Tools) > 0 {
 		err = o.openAIToolsToBedrockToolConfiguration(openAIReq, &bedrockReq)
@@ -190,6 +201,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 	openAiMessage *openai.ChatCompletionUserMessageParam, role string,
 ) (*awsbedrock.Message, error) {
 	if v, ok := openAiMessage.Content.Value.(string); ok {
+		fmt.Println("User role message content (string):", v)
 		return &awsbedrock.Message{
 			Role: role,
 			Content: []*awsbedrock.ContentBlock{
@@ -197,12 +209,14 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 			},
 		}, nil
 	} else if contents, ok := openAiMessage.Content.Value.([]openai.ChatCompletionContentPartUserUnionParam); ok {
+		fmt.Println("User role message content (array):", contents)
 		chatMessage := &awsbedrock.Message{Role: role}
 		chatMessage.Content = make([]*awsbedrock.ContentBlock, 0, len(contents))
 		for i := range contents {
 			contentPart := &contents[i]
 			if contentPart.TextContent != nil {
 				textContentPart := contentPart.TextContent
+				fmt.Println("User role message text content:", textContentPart.Text)
 				chatMessage.Content = append(chatMessage.Content, &awsbedrock.ContentBlock{
 					Text: &textContentPart.Text,
 				})
@@ -226,7 +240,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 					return nil, fmt.Errorf("unsupported image type: %s please use one of [png, jpeg, gif, webp]",
 						contentType)
 				}
-
+				fmt.Println("User role message image content:", format)
 				chatMessage.Content = append(chatMessage.Content, &awsbedrock.ContentBlock{
 					Image: &awsbedrock.ImageBlock{
 						Format: format,
@@ -257,11 +271,16 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 	openAiMessage *openai.ChatCompletionAssistantMessageParam, role string,
 ) (*awsbedrock.Message, error) {
 	var bedrockMessage *awsbedrock.Message
-	contentBlocks := make([]*awsbedrock.ContentBlock, 1)
+	contentBlocks := []*awsbedrock.ContentBlock{}
+	fmt.Println("starting translation for assistant")
 	if openAiMessage.Content.Type == openai.ChatCompletionAssistantMessageParamContentTypeRefusal {
-		contentBlocks[0] = &awsbedrock.ContentBlock{Text: openAiMessage.Content.Refusal}
+		fmt.Println("Assistant role message content (refusal):", openAiMessage.Content.Refusal)
+		contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Refusal})
 	} else {
-		contentBlocks[0] = &awsbedrock.ContentBlock{Text: openAiMessage.Content.Text}
+		fmt.Println("Assistant role message content (text):", openAiMessage.Content.Text)
+		if openAiMessage.Content.Text != nil {
+			contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Text})
+		}
 	}
 	bedrockMessage = &awsbedrock.Message{
 		Role:    role,
@@ -273,6 +292,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 		if err != nil {
 			return nil, err
 		}
+		fmt.Println("Assistant role message tool call:", toolCall.Function.Name, toolCall.ID)
 		bedrockMessage.Content = append(bedrockMessage.Content,
 			&awsbedrock.ContentBlock{
 				ToolUse: &awsbedrock.ToolUseBlock{
@@ -281,7 +301,9 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 					Input:     input,
 				},
 			})
+		fmt.Printf("tool use assistant %v \n %v", toolCall.Function.Name, input)
 	}
+	fmt.Printf("\n length of assistant content block %v", len(bedrockMessage.Content))
 	return bedrockMessage, nil
 }
 
@@ -290,13 +312,16 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 	openAiMessage *openai.ChatCompletionSystemMessageParam, bedrockSystem *[]*awsbedrock.SystemContentBlock,
 ) error {
 	if v, ok := openAiMessage.Content.Value.(string); ok {
+		fmt.Println("System role message content (string):", v)
 		*bedrockSystem = append(*bedrockSystem, &awsbedrock.SystemContentBlock{
 			Text: v,
 		})
 	} else if contents, ok := openAiMessage.Content.Value.([]openai.ChatCompletionContentPartTextParam); ok {
+		fmt.Println("System role message content (array):", contents)
 		for i := range contents {
 			contentPart := &contents[i]
 			textContentPart := contentPart.Text
+			fmt.Println("System role message text content:", textContentPart)
 			*bedrockSystem = append(*bedrockSystem, &awsbedrock.SystemContentBlock{
 				Text: textContentPart,
 			})
@@ -307,20 +332,56 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 	return nil
 }
 
+// validateToolCallID checks if the ToolCallID exists and returns an error if it does not.
+func validateToolCallID(toolCallID string) error {
+	if toolCallID == "" {
+		return fmt.Errorf("ToolCallID is missing")
+	}
+	return nil
+}
+
 // openAIMessageToBedrockMessageRoleTool converts openai tool role message.
 func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMessageRoleTool(
 	openAiMessage *openai.ChatCompletionToolMessageParam, role string,
 ) (*awsbedrock.Message, error) {
+	// Validate and cast the  content block as a string
+	var content []*awsbedrock.ToolResultContentBlock
+
+	switch v := openAiMessage.Content.Value.(type) {
+	case string:
+		fmt.Println("Tool role message content (string):", v)
+		content = []*awsbedrock.ToolResultContentBlock{
+			{
+				Text: &v,
+			},
+		}
+	case []openai.ChatCompletionContentPartTextParam:
+		var combinedText string
+		for _, part := range v {
+			combinedText += part.Text
+		}
+		fmt.Println("Tool role message content (combined text):", combinedText)
+		content = []*awsbedrock.ToolResultContentBlock{
+			{
+				Text: &combinedText,
+			},
+		}
+	default:
+		return nil, fmt.Errorf("unexpected content type for tool message: %T", openAiMessage.Content.Value)
+	}
+
+	if err := validateToolCallID(openAiMessage.ToolCallID); err != nil {
+		return nil, err
+	}
+	fmt.Println("Tool role message ToolCallID:", openAiMessage.ToolCallID)
+
 	return &awsbedrock.Message{
 		Role: role,
 		Content: []*awsbedrock.ContentBlock{
 			{
 				ToolResult: &awsbedrock.ToolResultBlock{
-					Content: []*awsbedrock.ToolResultContentBlock{
-						{
-							Text: openAiMessage.Content.Value.(*string),
-						},
-					},
+					Content:   content,
+					ToolUseID: &openAiMessage.ToolCallID,
 				},
 			},
 		},
@@ -332,9 +393,11 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 	bedrockReq *awsbedrock.ConverseInput,
 ) error {
 	// Convert Messages.
+	fmt.Printf("length of openAI messages: %v", len(openAIReq.Messages))
 	bedrockReq.Messages = make([]*awsbedrock.Message, 0, len(openAIReq.Messages))
 	for i := range openAIReq.Messages {
 		msg := &openAIReq.Messages[i]
+		fmt.Printf("\nProcessing message %d with role %s\n", i, msg.Type)
 		switch msg.Type {
 		case openai.ChatMessageRoleUser:
 			userMessage := msg.Value.(openai.ChatCompletionUserMessageParam)
@@ -344,7 +407,9 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 			}
 			bedrockReq.Messages = append(bedrockReq.Messages, bedrockMessage)
 		case openai.ChatMessageRoleAssistant:
+			fmt.Printf("assistant value: %v", msg.Value)
 			assistantMessage := msg.Value.(openai.ChatCompletionAssistantMessageParam)
+			fmt.Printf("assistant message content: %v, name: %v, audio: %v", assistantMessage.Content, assistantMessage.Name, assistantMessage.Audio)
 			bedrockMessage, err := o.openAIMessageToBedrockMessageRoleAssistant(&assistantMessage, msg.Type)
 			if err != nil {
 				return err
@@ -366,14 +431,17 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 			}
 
 			if text, ok := message.Content.Value.(string); ok {
+				fmt.Println("Developer role message content (string):", text)
 				bedrockReq.System = append(bedrockReq.System, &awsbedrock.SystemContentBlock{
 					Text: text,
 				})
 			} else {
 				if contents, ok := message.Content.Value.([]openai.ChatCompletionContentPartTextParam); ok {
+					fmt.Println("Developer role message content (array):", contents)
 					for i := range contents {
 						contentPart := &contents[i]
 						textContentPart := contentPart.Text
+						fmt.Println("Developer role message text content:", textContentPart)
 						bedrockReq.System = append(bedrockReq.System, &awsbedrock.SystemContentBlock{
 							Text: textContentPart,
 						})
@@ -389,7 +457,10 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 			if err != nil {
 				return err
 			}
-			bedrockReq.Messages = append(bedrockReq.Messages, bedrockMessage)
+			//bedrockReq.Messages = append(bedrockReq.Messages, bedrockMessage)
+			// return only the tool result
+			fmt.Println("returning only tool result")
+			bedrockReq.Messages = []*awsbedrock.Message{bedrockMessage}
 		default:
 			return fmt.Errorf("unexpected role: %s", msg.Type)
 		}
@@ -481,6 +552,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseError(respHeaders
 	} else {
 		var buf []byte
 		buf, err = io.ReadAll(body)
+		fmt.Printf("\nprinting body from ResponseError:\n %v\n", string(buf))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read error body: %w", err)
 		}
@@ -548,6 +620,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 			mut.Body = append(mut.Body, oaiEventBytes...)
 			mut.Body = append(mut.Body, []byte("\n\n")...)
 		}
+		fmt.Printf("\nprinting mut.Body %v", string(mut.Body))
 
 		if endOfStream {
 			mut.Body = append(mut.Body, []byte("data: [DONE]\n")...)
@@ -559,6 +632,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 	if err = json.NewDecoder(body).Decode(&bedrockResp); err != nil {
 		return nil, nil, tokenUsage, fmt.Errorf("failed to unmarshal body: %w", err)
 	}
+	fmt.Printf("\nbedrock output message from converse: %v\n", len(bedrockResp.Output.Message.Content))
 
 	openAIResp := openai.ChatCompletionResponse{
 		Object:  "chat.completion",
@@ -577,18 +651,41 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 			CompletionTokens: bedrockResp.Usage.OutputTokens,
 		}
 	}
-	for i, output := range bedrockResp.Output.Message.Content {
+
+	// Merge bedrock response content into openai response choices
+	for i := 0; i < len(bedrockResp.Output.Message.Content); i++ {
+		output := bedrockResp.Output.Message.Content[i]
 		choice := openai.ChatCompletionResponseChoice{
 			Index: (int64)(i),
 			Message: openai.ChatCompletionResponseChoiceMessage{
-				Content: output.Text,
-				Role:    bedrockResp.Output.Message.Role,
+				Role: bedrockResp.Output.Message.Role,
 			},
 			FinishReason: o.bedrockStopReasonToOpenAIStopReason(bedrockResp.StopReason),
 		}
-		if toolCall := o.bedrockToolUseToOpenAICalls(output.ToolUse); toolCall != nil {
-			choice.Message.ToolCalls = []openai.ChatCompletionMessageToolCallParam{*toolCall}
+
+		if output.Text != nil {
+			choice.Message.Content = output.Text
 		}
+
+		if output.ToolUse != nil {
+			if toolCall := o.bedrockToolUseToOpenAICalls(output.ToolUse); toolCall != nil {
+				choice.Message.ToolCalls = []openai.ChatCompletionMessageToolCallParam{*toolCall}
+			}
+		}
+
+		// Check if the next element should be merged -
+		// A model may return the tool config in a separate message,
+		// the message text + tool config should be merged for the openai responsed
+		if i+1 < len(bedrockResp.Output.Message.Content) {
+			nextOutput := bedrockResp.Output.Message.Content[i+1]
+			if nextOutput.Text == nil && nextOutput.ToolUse != nil {
+				if toolCall := o.bedrockToolUseToOpenAICalls(nextOutput.ToolUse); toolCall != nil {
+					choice.Message.ToolCalls = append(choice.Message.ToolCalls, *toolCall)
+				}
+				i++ // Skip the next element as it has been merged
+			}
+		}
+
 		openAIResp.Choices = append(openAIResp.Choices, choice)
 	}
 
