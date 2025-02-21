@@ -307,10 +307,19 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 	return nil
 }
 
+// validateToolCallID checks if the ToolCallID exists and returns an error if it does not.
+func validateToolCallID(toolCallID string) error {
+	if toolCallID == "" {
+		return fmt.Errorf("ToolCallID is missing")
+	}
+	return nil
+}
+
 // openAIMessageToBedrockMessageRoleTool converts openai tool role message.
 func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMessageRoleTool(
 	openAiMessage *openai.ChatCompletionToolMessageParam, role string,
 ) (*awsbedrock.Message, error) {
+	// Validate and cast the  content block as a string
 	var content []*awsbedrock.ToolResultContentBlock
 
 	switch v := openAiMessage.Content.Value.(type) {
@@ -334,13 +343,20 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 		return nil, fmt.Errorf("unexpected content type for tool message: %T", openAiMessage.Content.Value)
 	}
 
+	toolResult := &awsbedrock.ToolResultBlock{
+		Content: content,
+	}
+
+	if err := validateToolCallID(openAiMessage.ToolCallID); err != nil {
+		return nil, err
+	}
+	toolResult.ToolUseID = &openAiMessage.ToolCallID
+
 	return &awsbedrock.Message{
 		Role: role,
 		Content: []*awsbedrock.ContentBlock{
 			{
-				ToolResult: &awsbedrock.ToolResultBlock{
-					Content: content,
-				},
+				ToolResult: toolResult,
 			},
 		},
 	}, nil
@@ -622,7 +638,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 		}
 
 		// Check if the next element should be merged -
-		// A model may return the tool config in a separate message, 
+		// A model may return the tool config in a separate message,
 		// the message text + tool config should be merged for the openai responsed
 		if i+1 < len(bedrockResp.Output.Message.Content) {
 			nextOutput := bedrockResp.Output.Message.Content[i+1]
