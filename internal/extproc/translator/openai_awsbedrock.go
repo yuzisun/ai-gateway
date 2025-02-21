@@ -85,6 +85,13 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	//TODO: remove after testing
+	for _, msg := range bedrockReq.Messages {
+		for _, c := range msg.Content {
+			fmt.Printf("c.txt: %v, \n c.toolresult: %v \n c.toolUse: %v \n msg.Role: %v", *c.Text, *c.ToolResult, *c.ToolUse, msg.Role)
+		}
+	}
+
 	// Convert ToolConfiguration.
 	if len(openAIReq.Tools) > 0 {
 		err = o.openAIToolsToBedrockToolConfiguration(openAIReq, &bedrockReq)
@@ -190,6 +197,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 	openAiMessage *openai.ChatCompletionUserMessageParam, role string,
 ) (*awsbedrock.Message, error) {
 	if v, ok := openAiMessage.Content.Value.(string); ok {
+		fmt.Println("setting the role user content in after casting")
 		return &awsbedrock.Message{
 			Role: role,
 			Content: []*awsbedrock.ContentBlock{
@@ -197,6 +205,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 			},
 		}, nil
 	} else if contents, ok := openAiMessage.Content.Value.([]openai.ChatCompletionContentPartUserUnionParam); ok {
+		fmt.Println("setting the role user content in else")
 		chatMessage := &awsbedrock.Message{Role: role}
 		chatMessage.Content = make([]*awsbedrock.ContentBlock, 0, len(contents))
 		for i := range contents {
@@ -343,20 +352,18 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 		return nil, fmt.Errorf("unexpected content type for tool message: %T", openAiMessage.Content.Value)
 	}
 
-	toolResult := &awsbedrock.ToolResultBlock{
-		Content: content,
-	}
-
 	if err := validateToolCallID(openAiMessage.ToolCallID); err != nil {
 		return nil, err
 	}
-	toolResult.ToolUseID = &openAiMessage.ToolCallID
 
 	return &awsbedrock.Message{
 		Role: role,
 		Content: []*awsbedrock.ContentBlock{
 			{
-				ToolResult: toolResult,
+				ToolResult: &awsbedrock.ToolResultBlock{
+					Content:   content,
+					ToolUseID: &openAiMessage.ToolCallID,
+				},
 			},
 		},
 	}, nil
