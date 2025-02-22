@@ -889,6 +889,8 @@ func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_ResponseBody(t *testing.T)
 						Role: "assistant",
 						Content: []*awsbedrock.ContentBlock{
 							{Text: ptr.To("response")},
+							{Text: ptr.To("from")},
+							{Text: ptr.To("assistant")},
 						},
 					},
 				},
