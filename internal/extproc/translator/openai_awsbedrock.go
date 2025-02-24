@@ -86,29 +86,6 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 		return nil, nil, nil, err
 	}
 
-	//TODO: remove after testing
-	fmt.Printf("printing the messages before tool config with messages length %v", len(bedrockReq.Messages))
-	for i, msg := range bedrockReq.Messages {
-		fmt.Printf("\n[%v], role: %v\n", i, msg.Role)
-		for _, c := range msg.Content {
-			fmt.Printf("all content values: doc %v, text %v, toolresult %v, tooluse %v, image %v\n", c.Document, c.Text, c.ToolResult, c.ToolUse, c.Image)
-			if c.Text != nil {
-				fmt.Printf("[%v] c.txt: %v, \n", i, *c.Text)
-			}
-			if c.ToolResult != nil {
-				fmt.Printf("content length: %v\n", len(c.ToolResult.Content))
-				for a, cont := range c.ToolResult.Content {
-					if cont.Text != nil {
-						fmt.Printf("[%v] c.toolResult.content: %v, c.toolResult.ID: %v\n", a, *cont.Text, *c.ToolResult.ToolUseID)
-					}
-				}
-			}
-			if c.ToolUse != nil {
-				fmt.Printf("[%v] toolUse.name: %v, tooluse.input %v\n", i, c.ToolUse.Name, c.ToolUse.Input)
-			}
-		}
-	}
-
 	// Convert ToolConfiguration.
 	if len(openAIReq.Tools) > 0 {
 		err = o.openAIToolsToBedrockToolConfiguration(openAIReq, &bedrockReq)
@@ -144,6 +121,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 	if mut.Body, err = json.Marshal(bedrockReq); err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to marshal body: %w", err)
 	}
+	fmt.Printf("\nprinting body mutation %v\n", string(mut.Body))
 	setContentLength(headerMutation, mut.Body)
 	return headerMutation, &extprocv3.BodyMutation{Mutation: mut}, override, nil
 }
