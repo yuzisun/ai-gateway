@@ -249,7 +249,7 @@ func TestWithRealProviders(t *testing.T) {
 					t.Logf("length of tool calls %v\n", len(completion.Choices[0].Message.ToolCalls))
 					getWeatherCalled := false
 					for _, toolCall := range toolCalls {
-						t.Logf("tool id: %v", toolCall.ID)g
+						t.Logf("tool id: %v", toolCall.ID)
 						if toolCall.Function.Name == "get_weather" {
 							getWeatherCalled = true
 							// Extract the location from the function call arguments
