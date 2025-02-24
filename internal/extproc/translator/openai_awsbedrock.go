@@ -402,6 +402,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 				ToolResult: &awsbedrock.ToolResultBlock{
 					Content:   content,
 					ToolUseID: &openAiMessage.ToolCallID,
+					Status:    ptr.To("success"),
 				},
 			},
 		},
