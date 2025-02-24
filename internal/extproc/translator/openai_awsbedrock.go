@@ -671,7 +671,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 		}
 	}
 
-	fmt.Printf("(len(bedrockResp.Output.Message.Content): %v", len(bedrockResp.Output.Message.Content))
+	fmt.Printf("(len(bedrockResp.Output.Message.Content): %v\n", len(bedrockResp.Output.Message.Content))
 	openAIResp := openai.ChatCompletionResponse{
 		Object:  "chat.completion",
 		Choices: make([]openai.ChatCompletionResponseChoice, 0),
@@ -726,7 +726,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 
 		for idx, c := range openAIResp.Choices {
 			if c.Message.Content != nil {
-				fmt.Printf("printing choice [%v] : %+v \n content: %v \n", idx, c, c.Message.Content)
+				fmt.Printf("printing choice [%v] : %+v \n content: %v \n", idx, c, *c.Message.Content)
 			} else {
 				fmt.Printf("printing choice [%v] : %+v \n", idx, c)
 			}
