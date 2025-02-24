@@ -723,7 +723,11 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 		}
 
 		for idx, c := range openAIResp.Choices {
-			fmt.Printf("printing choice [%v] : %+v\n", idx, c)
+			if c.Message.Content != nil {
+				fmt.Printf("printing choice [%v] : %+v \n content: %v \n", idx, c, c.Message.Content)
+			} else {
+				fmt.Printf("printing choice [%v] : %+v \n", idx, c)
+			}
 		}
 		openAIResp.Choices = append(openAIResp.Choices, choice)
 	}
