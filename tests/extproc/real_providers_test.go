@@ -228,7 +228,7 @@ func TestWithRealProviders(t *testing.T) {
 							},
 						}),
 						//// TODO: check if we should seed.
-						Seed:  openai.Int(0),
+						//Seed:  openai.Int(0),
 						Model: openai.F(tc.modelName),
 					}
 					completion, err := client.Chat.Completions.New(context.Background(), params)
