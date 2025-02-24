@@ -112,7 +112,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 				}
 			}
 			if c.ToolUse != nil {
-				fmt.Printf("[%v] toolUse.name: %v, tooluse.input %v\n", i, c.ToolUse.Name, c.ToolUse.Input)
+				fmt.Printf("printing tool use [%v] toolUse.name: %v, tooluse.input %v\n", i, c.ToolUse.Name, c.ToolUse.Input)
 			}
 		}
 	}
@@ -550,7 +550,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) bedrockToolUseToOpenAICal
 			Name:      toolUse.Name,
 			Arguments: string(arguments),
 		},
-		//Type: openai.ChatCompletionMessageToolCallTypeFunction,
+		Type: openai.ChatCompletionMessageToolCallTypeFunction,
 	}
 }
 
@@ -716,6 +716,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 					//choice.Message.ToolCalls = append(choice.Message.ToolCalls, *toolCall)
 					choice.Message.ToolCalls = []openai.ChatCompletionMessageToolCallParam{*toolCall}
 				}
+				fmt.Printf("length of toolcalls %v\n", len(choice.Message.ToolCalls))
 				i++ // Skip the next element as it has been merged
 			}
 		}

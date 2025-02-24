@@ -246,9 +246,10 @@ func TestWithRealProviders(t *testing.T) {
 					params.Messages.Value = append(params.Messages.Value, completion.Choices[0].Message)
 					t.Logf("appended param %+v\n", completion.Choices[0].Message)
 					t.Logf("appended message content: %+v \n toolcalls: %+v\n", completion.Choices[0].Message.Content, completion.Choices[0].Message.ToolCalls)
+					t.Logf("length of tool calls %v\n", len(completion.Choices[0].Message.ToolCalls))
 					getWeatherCalled := false
 					for _, toolCall := range toolCalls {
-						t.Logf("tool id: %v", toolCall.ID)
+						t.Logf("tool id: %v", toolCall.ID)g
 						if toolCall.Function.Name == "get_weather" {
 							getWeatherCalled = true
 							// Extract the location from the function call arguments
