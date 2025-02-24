@@ -250,7 +250,7 @@ func TestWithRealProviders(t *testing.T) {
 						Audio:   openai.ChatCompletionAudio{},
 						FunctionCall: openai.ChatCompletionMessageFunctionCall{
 							Arguments: `{\"location\":\"New York City\"}`,
-							Name:      "get_weather",g
+							Name:      "get_weather",
 							//JSON: openai.ResponseFormatJSONObjectParam{
 							//	Arguments:   openai.JSONField{Raw: `{"location":"New York City"}`, Status: 3},
 							//	Name:        openai.JSONField{Raw: "", Status: 0},
