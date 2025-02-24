@@ -260,7 +260,7 @@ func TestWithRealProviders(t *testing.T) {
 						},
 						ToolCalls: []openai.ChatCompletionMessageToolCall{
 							{
-								ID: "tooluse_J3C0Db79TwSTQkyyQa50jQ",
+								ID: completion.Choices[0].Message.ToolCalls[0].ID,
 								Function: openai.ChatCompletionMessageToolCallFunction{
 									Arguments: `{"location":"New York City"}`,
 									Name:      "get_weather",
@@ -294,8 +294,10 @@ func TestWithRealProviders(t *testing.T) {
 					}
 					params.Messages.Value = append(params.Messages.Value, msg)
 					t.Logf("appended param %+v\n", msg)
-					t.Logf("Appended message content: %+v \n toolcalls: %+v\n", msg.Content, msg.ToolCalls) // Debug log
+					t.Logf("Appended message content: %+v \n toolcalls: %+v\n", msg.Content, msg.ToolCalls)
+					t.Logf("response message content: %+v \n toolcalls: %+v\n", completion.Choices[0].Message.Content, completion.Choices[0].Message.ToolCalls)
 					getWeatherCalled := false
+					toolCalls = msg.ToolCalls
 					for _, toolCall := range toolCalls {
 						t.Logf("tool id: %v", toolCall.ID)
 						if toolCall.Function.Name == "get_weather" {
