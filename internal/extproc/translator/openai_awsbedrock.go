@@ -89,12 +89,22 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 	//TODO: remove after testing
 	fmt.Printf("printing the messages before tool config with messages length %v", len(bedrockReq.Messages))
 	for i, msg := range bedrockReq.Messages {
+		fmt.Printf("\n[%v], role: %v\n", i, msg.Role)
 		for _, c := range msg.Content {
-			txt := ""
 			if c.Text != nil {
-				txt = *c.Text
+				fmt.Printf("[%v] c.txt: %v, \n", i, *c.Text)
 			}
-			fmt.Printf("[%v] c.txt: %v, \n c.toolresult: %v \n c.toolUse: %v \n msg.Role: %v ", i, txt, c.ToolResult, c.ToolUse, msg.Role)
+			if c.ToolResult != nil {
+				fmt.Printf("content length: %v", len(c.ToolResult.Content))
+				for a, cont := range c.ToolResult.Content {
+					if cont.Text != nil {
+						fmt.Printf("[%v] c.toolResult.content: %v, c.toolResult.ID: %v\n", a, cont.Text, c.ToolResult.ToolUseID)
+					}
+				}
+			}
+			if c.ToolUse != nil {
+				fmt.Printf("[%v] toolUse.name: %v, tooluse.input %v\n", i, c.ToolUse.Name, c.ToolUse.Input)
+			}
 		}
 	}
 
@@ -112,10 +122,15 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 		fmt.Printf("\n[%v], role: %v\n", i, msg.Role)
 		for _, c := range msg.Content {
 			if c.Text != nil {
-				fmt.Printf("[%v] c.txt: %v, \n", i, c.Text)
+				fmt.Printf("[%v] c.txt: %v, \n", i, *c.Text)
 			}
 			if c.ToolResult != nil {
-				fmt.Printf("[%v] c.toolResult.content: %v, c.toolResult.ID: %v\n", i, c.ToolResult.Content, c.ToolResult.ToolUseID)
+				fmt.Printf("content length: %v", len(c.ToolResult.Content))
+				for a, cont := range c.ToolResult.Content {
+					if cont.Text != nil {
+						fmt.Printf("[%v] c.toolResult.content: %v, c.toolResult.ID: %v\n", a, cont.Text, c.ToolResult.ToolUseID)
+					}
+				}
 			}
 			if c.ToolUse != nil {
 				fmt.Printf("[%v] toolUse.name: %v, tooluse.input %v\n", i, c.ToolUse.Name, c.ToolUse.Input)
