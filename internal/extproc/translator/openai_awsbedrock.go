@@ -288,7 +288,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 	openAiMessage *openai.ChatCompletionAssistantMessageParam, role string,
 ) (*awsbedrock.Message, error) {
 	var bedrockMessage *awsbedrock.Message
-	contentBlocks := make([]*awsbedrock.ContentBlock, 1)
+	contentBlocks := make([]*awsbedrock.ContentBlock, 0)
 	//contentBlocks := []*awsbedrock.ContentBlock{}
 	fmt.Println("starting translation for assistant")
 	if openAiMessage.Content.Type == openai.ChatCompletionAssistantMessageParamContentTypeRefusal {
