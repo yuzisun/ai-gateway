@@ -299,10 +299,8 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 		if openAiMessage.Content.Text != nil {
 			fmt.Println("Assistant role message content (text):", openAiMessage.Content.Text)
 			contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Text})
-		} else {
-			contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: ptr.To("Certainly! I can help you get the current weather information for New York City. To do that, I'll use the available weather tool. Let me fetch that information for you right away.")})
 		}
-		//TODO: we are missing this in second responseg
+		//TODO: we are missing this in second response
 	}
 	bedrockMessage = &awsbedrock.Message{
 		Role:    role,
