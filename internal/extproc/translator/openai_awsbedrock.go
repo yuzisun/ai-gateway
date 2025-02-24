@@ -86,22 +86,35 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 		return nil, nil, nil, err
 	}
 
-	// Convert ToolConfiguration.
-	//if len(openAIReq.Tools) > 0 {
-	//	err = o.openAIToolsToBedrockToolConfiguration(openAIReq, &bedrockReq)
-	//	if err != nil {
-	//		return nil, nil, nil, err
-	//	}
-	//}
-
 	//TODO: remove after testing
-	for _, msg := range bedrockReq.Messages {
+	fmt.Printf("printing the messages before tool config with messages length %v", len(bedrockReq.Messages))
+	for i, msg := range bedrockReq.Messages {
 		for _, c := range msg.Content {
 			txt := ""
 			if c.Text != nil {
 				txt = *c.Text
 			}
-			fmt.Printf("c.txt: %v, \n c.toolresult: %v \n c.toolUse: %v \n msg.Role: %v ", txt, c.ToolResult, c.ToolUse, msg.Role)
+			fmt.Printf("[%v] c.txt: %v, \n c.toolresult: %v \n c.toolUse: %v \n msg.Role: %v ", i, txt, c.ToolResult, c.ToolUse, msg.Role)
+		}
+	}
+
+	// Convert ToolConfiguration.
+	if len(openAIReq.Tools) > 0 {
+		err = o.openAIToolsToBedrockToolConfiguration(openAIReq, &bedrockReq)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+
+	//TODO: remove after testing
+	fmt.Printf("printing the messages after tool config with messages length %v", len(bedrockReq.Messages))
+	for i, msg := range bedrockReq.Messages {
+		for _, c := range msg.Content {
+			txt := ""
+			if c.Text != nil {
+				txt = *c.Text
+			}
+			fmt.Printf("[%v] c.txt: %v, \n c.toolresult: %v \n c.toolUse: %v \n msg.Role: %v ", i, txt, c.ToolResult, c.ToolUse, msg.Role)
 		}
 	}
 
