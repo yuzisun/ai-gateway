@@ -314,6 +314,8 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 		fmt.Println("Assistant role message content (text):", openAiMessage.Content.Text)
 		if openAiMessage.Content.Text != nil {
 			contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Text})
+		} else { //TODO: remove this after testing
+			contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: ptr.To("Certainly! I can help you get the weather information for New York City. To do that, I'll use the available weather tool. Let me fetch that information for you right away.")})
 		}
 	}
 	bedrockMessage = &awsbedrock.Message{

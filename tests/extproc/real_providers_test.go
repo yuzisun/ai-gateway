@@ -268,8 +268,8 @@ func TestWithRealProviders(t *testing.T) {
 						return false
 					}
 
-					for _, param := range params.Messages.Value {
-						t.Logf("printing param message value: %v", param)
+					for i, param := range params.Messages.Value {
+						t.Logf("printing param message [%v] value: %v", i, param)
 					}
 
 					secondChatCompletion, err := client.Chat.Completions.New(context.Background(), params)
