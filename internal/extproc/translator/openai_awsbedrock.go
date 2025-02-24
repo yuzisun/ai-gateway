@@ -85,6 +85,15 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 	if err != nil {
 		return nil, nil, nil, err
 	}
+
+	// Convert ToolConfiguration.
+	if len(openAIReq.Tools) > 0 {
+		err = o.openAIToolsToBedrockToolConfiguration(openAIReq, &bedrockReq)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+
 	//TODO: remove after testing
 	for _, msg := range bedrockReq.Messages {
 		for _, c := range msg.Content {
@@ -93,14 +102,6 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 				txt = *c.Text
 			}
 			fmt.Printf("c.txt: %v, \n c.toolresult: %v \n c.toolUse: %v \n msg.Role: %v ", txt, c.ToolResult, c.ToolUse, msg.Role)
-		}
-	}
-
-	// Convert ToolConfiguration.
-	if len(openAIReq.Tools) > 0 {
-		err = o.openAIToolsToBedrockToolConfiguration(openAIReq, &bedrockReq)
-		if err != nil {
-			return nil, nil, nil, err
 		}
 	}
 
@@ -467,7 +468,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 	for _, msg := range bedrockReq.Messages {
 		fmt.Printf("all bedrock messages for role %v", msg.Role)
 		for _, content := range msg.Content {
-			fmt.Printf("content in message \n txt: %v, \n toolresult block: %v, \n  tooluse: %v ", *content.Text, content.ToolResult, content.ToolUse)
+			fmt.Printf("content in message \n txt: %v, \n toolresult block: %v, \n  tooluse: %v ", content.Text, content.ToolResult, content.ToolUse)
 		}
 	}
 	return nil
