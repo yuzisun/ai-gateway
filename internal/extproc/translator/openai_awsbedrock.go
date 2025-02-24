@@ -91,6 +91,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 	for i, msg := range bedrockReq.Messages {
 		fmt.Printf("\n[%v], role: %v\n", i, msg.Role)
 		for _, c := range msg.Content {
+			fmt.Printf("all content values: doc %v, text %v, toolresult %v, tooluse %v, image %v\n", c.Document, c.Text, c.ToolResult, c.ToolUse, c.Image)
 			if c.Text != nil {
 				fmt.Printf("[%v] c.txt: %v, \n", i, *c.Text)
 			}
