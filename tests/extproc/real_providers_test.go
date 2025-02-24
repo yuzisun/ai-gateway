@@ -211,7 +211,7 @@ func TestWithRealProviders(t *testing.T) {
 						}),
 						Tools: openai.F([]openai.ChatCompletionToolParam{
 							{
-								Type: openai.F(openai.ChatCompletionToolTypeFunction),
+								//Type: openai.F(openai.ChatCompletionToolTypeFunction),
 								Function: openai.F(openai.FunctionDefinitionParam{
 									Name:        openai.String("get_weather"),
 									Description: openai.String("Get weather at the given location"),
