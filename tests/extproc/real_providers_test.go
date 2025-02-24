@@ -274,6 +274,8 @@ func TestWithRealProviders(t *testing.T) {
 
 					secondChatCompletion, err := client.Chat.Completions.New(context.Background(), params)
 					if err != nil {
+						//TODO: remove
+						t.Logf("secondChatCompletion w err: %v", secondChatCompletion)
 						t.Logf("error during second response: %v", err)
 						return false
 					}

@@ -107,14 +107,14 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 	}
 
 	//TODO: remove after testing
-	fmt.Printf("printing the messages after tool config with messages length %v", len(bedrockReq.Messages))
+	fmt.Printf("\nprinting the messages after tool config with messages length %v\n", len(bedrockReq.Messages))
 	for i, msg := range bedrockReq.Messages {
 		for _, c := range msg.Content {
 			txt := ""
 			if c.Text != nil {
 				txt = *c.Text
 			}
-			fmt.Printf("[%v] c.txt: %v, \n c.toolresult: %v \n c.toolUse: %v \n msg.Role: %v ", i, txt, c.ToolResult, c.ToolUse, msg.Role)
+			fmt.Printf("[%v] c.txt: %v, \n c.toolresult.id: %v, c.toolresult.content: %v \n c.toolUse.name: %v,  c.toolUse.input: %v \n msg.Role: %v ", i, txt, c.ToolResult.ToolUseID, c.ToolResult.Content, c.ToolUse.Name, c.ToolUse.Input, msg.Role)
 		}
 	}
 
