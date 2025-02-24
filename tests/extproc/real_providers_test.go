@@ -244,13 +244,13 @@ func TestWithRealProviders(t *testing.T) {
 					}
 					// Step 3: Simulate the tool returning a response, add the tool response to the params, and check the second response
 					params.Messages.Value = append(params.Messages.Value, completion.Choices[0].Message)
-					t.Logf("appended param %v\n length: %v\n", completion.Choices[0].Message, len(completion.Choices[0].Message))
+					t.Logf("appended param %v\n", completion.Choices[0].Message)
 					t.Logf("Appended message content: %v \n toolcalls: %v\n", completion.Choices[0].Message.Content, completion.Choices[0].Message.ToolCalls) // Debug log
 					getWeatherCalled := false
 					for _, toolCall := range toolCalls {
 						t.Logf("tool id: %v", toolCall.ID)
 						if toolCall.Function.Name == "get_weather" {
-							getWeatherCalled = true
+							getWeatherCalled = trueg
 							// Extract the location from the function call arguments
 							var args map[string]interface{}
 							if argErr := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); argErr != nil {

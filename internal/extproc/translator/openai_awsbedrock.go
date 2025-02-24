@@ -288,16 +288,16 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 	openAiMessage *openai.ChatCompletionAssistantMessageParam, role string,
 ) (*awsbedrock.Message, error) {
 	var bedrockMessage *awsbedrock.Message
-	contentBlocks := []*awsbedrock.ContentBlock{}
+	contentBlocks := make([]*awsbedrock.ContentBlock, 1)
+	//contentBlocks := []*awsbedrock.ContentBlock{}
 	fmt.Println("starting translation for assistant")
 	if openAiMessage.Content.Type == openai.ChatCompletionAssistantMessageParamContentTypeRefusal {
 		fmt.Println("Assistant role message content (refusal):", openAiMessage.Content.Refusal)
 		contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Refusal})
 	} else {
 		fmt.Println("Assistant role message content (text):", openAiMessage.Content.Text)
-		if openAiMessage.Content.Text != nil {
-			contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Text})
-		} //TODO: we are missing this in second response
+		contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Text})
+		//TODO: we are missing this in second response
 	}
 	bedrockMessage = &awsbedrock.Message{
 		Role:    role,
