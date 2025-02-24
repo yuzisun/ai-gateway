@@ -243,61 +243,10 @@ func TestWithRealProviders(t *testing.T) {
 						return false
 					}
 					// Step 3: Simulate the tool returning a response, add the tool response to the params, and check the second response
-					msg := openai.ChatCompletionMessage{
-						Content: "Certainly! I can help you get the weather information for New York City. To do that, I'll use the available weather tool. Let me fetch that information for you.",
-						Refusal: "",
-						Role:    openai.ChatCompletionMessageRoleAssistant,
-						Audio:   openai.ChatCompletionAudio{},
-						FunctionCall: openai.ChatCompletionMessageFunctionCall{
-							Arguments: `{\"location\":\"New York City\"}`,
-							Name:      "get_weather",
-							//JSON: openai.ResponseFormatJSONObjectParam{
-							//	Arguments:   openai.JSONField{Raw: `{"location":"New York City"}`, Status: 3},
-							//	Name:        openai.JSONField{Raw: "", Status: 0},
-							//	Raw:         "",
-							//	ExtraFields: map[string]interface{}{},
-							//},
-						},
-						ToolCalls: []openai.ChatCompletionMessageToolCall{
-							{
-								ID: completion.Choices[0].Message.ToolCalls[0].ID,
-								Function: openai.ChatCompletionMessageToolCallFunction{
-									Arguments: `{"location":"New York City"}`,
-									Name:      "get_weather",
-									//JSON: openai.ResponseFormatJSONObjectParam{
-									//	Arguments:   openai.JSONField{Raw: `{"location":"New York City"}`, Status: 3},
-									//	Name:        openai.JSONField{Raw: "get_weather", Status: 3},
-									//	Raw:         `{"arguments":"{\"location\":\"New York City\"}","name":"get_weather"}`,
-									//	ExtraFields: map[string]interface{}{},
-									//},
-								},
-								Type: "function",
-								//	JSON: openai.ResponseFormatJSONObjectParam{
-								//		ID: openai.JSONField{Raw: "tooluse_J3C0Db79TwSTQkyyQa50jQ", Status: 3},
-								//		Function: openai.JSONField{
-								//			Raw:    `{"arguments":"{\"location\":\"New York City\"}","name":"get_weather"}`,
-								//			Status: 3,
-								//		},
-								//		Type: openai.ResponseFormatJSONObjectParam{{Raw: "function", Status: 3},
-								//	},
-								//},
-							},
-							//JSON: openai.ResponseFormatJSONObjectParam{
-							//	ID:          openai.JSONField{Raw: "", Status: 0},
-							//	Data:        openai.JSONField{Raw: "", Status: 0},
-							//	ExpiresAt:   openai.JSONField{Raw: "", Status: 0},
-							//	Transcript:  openai.JSONField{Raw: "", Status: 0},
-							//	Raw:         "",
-							//	ExtraFields: map[string]interface{}{},
-							//},
-						},
-					}
-					params.Messages.Value = append(params.Messages.Value, msg)
-					t.Logf("appended param %+v\n", msg)
-					t.Logf("Appended message content: %+v \n toolcalls: %+v\n", msg.Content, msg.ToolCalls)
-					t.Logf("response message content: %+v \n toolcalls: %+v\n", completion.Choices[0].Message.Content, completion.Choices[0].Message.ToolCalls)
+					params.Messages.Value = append(params.Messages.Value, completion.Choices[0].Message)
+					t.Logf("appended param %+v\n", completion.Choices[0].Message)
+					t.Logf("appended message content: %+v \n toolcalls: %+v\n", completion.Choices[0].Message.Content, completion.Choices[0].Message.ToolCalls)
 					getWeatherCalled := false
-					toolCalls = msg.ToolCalls
 					for _, toolCall := range toolCalls {
 						t.Logf("tool id: %v", toolCall.ID)
 						if toolCall.Function.Name == "get_weather" {
