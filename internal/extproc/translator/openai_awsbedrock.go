@@ -550,7 +550,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) bedrockToolUseToOpenAICal
 			Name:      toolUse.Name,
 			Arguments: string(arguments),
 		},
-		Type: openai.ChatCompletionMessageToolCallTypeFunction,
+		//Type: openai.ChatCompletionMessageToolCallTypeFunction,
 	}
 }
 
