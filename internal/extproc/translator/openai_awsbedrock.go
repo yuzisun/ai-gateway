@@ -706,7 +706,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 
 		// Check if the next element should be merged -
 		// A model may return the tool config in a separate message,
-		// the message text + tool config should be merged for the openai responsed
+		// the message text + tool config should be merged for the openai response
 		if i+1 < len(bedrockResp.Output.Message.Content) {
 			nextOutput := bedrockResp.Output.Message.Content[i+1]
 			if nextOutput.Text == nil && nextOutput.ToolUse != nil {
@@ -717,6 +717,9 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 			}
 		}
 
+		for idx, c := range openAIResp.Choices {
+			fmt.Printf("printing choice [%v] : %+v\n", idx, c)
+		}
 		openAIResp.Choices = append(openAIResp.Choices, choice)
 	}
 
