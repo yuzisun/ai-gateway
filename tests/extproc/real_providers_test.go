@@ -250,7 +250,7 @@ func TestWithRealProviders(t *testing.T) {
 					for _, toolCall := range toolCalls {
 						t.Logf("tool id: %v", toolCall.ID)
 						if toolCall.Function.Name == "get_weather" {
-							getWeatherCalled = trueg
+							getWeatherCalled = true
 							// Extract the location from the function call arguments
 							var args map[string]interface{}
 							if argErr := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); argErr != nil {
