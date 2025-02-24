@@ -297,7 +297,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 		fmt.Println("Assistant role message content (text):", openAiMessage.Content.Text)
 		if openAiMessage.Content.Text != nil {
 			contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Text})
-		} //TODO: we are missing this
+		} //TODO: we are missing this in second response
 	}
 	bedrockMessage = &awsbedrock.Message{
 		Role:    role,
@@ -655,6 +655,9 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 		return nil, nil, tokenUsage, fmt.Errorf("failed to unmarshal body: %w", err)
 	}
 	fmt.Printf("\nbedrock output message from converse: %v\n", len(bedrockResp.Output.Message.Content))
+	for i, cont := range bedrockResp.Output.Message.Content {
+		fmt.Printf("[%v] content message in response: %v", i, cont.Text)
+	}
 
 	openAIResp := openai.ChatCompletionResponse{
 		Object:  "chat.completion",
