@@ -87,12 +87,12 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 	}
 
 	// Convert ToolConfiguration.
-	if len(openAIReq.Tools) > 0 {
-		err = o.openAIToolsToBedrockToolConfiguration(openAIReq, &bedrockReq)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-	}
+	//if len(openAIReq.Tools) > 0 {
+	//	err = o.openAIToolsToBedrockToolConfiguration(openAIReq, &bedrockReq)
+	//	if err != nil {
+	//		return nil, nil, nil, err
+	//	}
+	//}
 
 	//TODO: remove after testing
 	for _, msg := range bedrockReq.Messages {
