@@ -243,12 +243,8 @@ func TestWithRealProviders(t *testing.T) {
 						return false
 					}
 					// Step 3: Simulate the tool returning a response, add the tool response to the params, and check the second response
-					message := openai.ChatCompletionMessage{
-						Content: "Certainly! I can help you get the weather information for New York City. To do this, I'll use the available weather tool. Let me fetch that information for you right away.",
-						Role:    openai.ChatCompletionMessageRoleAssistant,
-					}
-					//params.Messages.Value = append(params.Messages.Value, completion.Choices[0].Message)
-					params.Messages.Value = append(params.Messages.Value, message)
+					params.Messages.Value = append(params.Messages.Value, completion.Choices[0].Message)
+					t.Logf("Appended message content: %v \n toolcalls: %v\n", completion.Choices[0].Message.Content, completion.Choices[0].Message.ToolCalls) // Debug log
 					getWeatherCalled := false
 					for _, toolCall := range toolCalls {
 						t.Logf("tool id: %v", toolCall.ID)
@@ -266,6 +262,7 @@ func TestWithRealProviders(t *testing.T) {
 							// Simulate getting weather data
 							weatherData := "Sunny, 25°C"
 							params.Messages.Value = append(params.Messages.Value, openai.ToolMessage(toolCall.ID, weatherData))
+							t.Logf("Appended tool message: %v", openai.ToolMessage(toolCall.ID, weatherData)) // Debug log
 						}
 					}
 					if getWeatherCalled == false {
