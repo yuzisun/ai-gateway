@@ -122,6 +122,9 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 		return nil, nil, nil, fmt.Errorf("failed to marshal body: %w", err)
 	}
 	fmt.Printf("\nprinting body mutation %v\n", string(mut.Body))
+	if headerMutation != nil {
+		fmt.Printf("printing header mutation %v\n", *headerMutation)
+	}
 	setContentLength(headerMutation, mut.Body)
 	return headerMutation, &extprocv3.BodyMutation{Mutation: mut}, override, nil
 }
