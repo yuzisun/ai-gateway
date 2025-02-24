@@ -313,14 +313,19 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 			return nil, err
 		}
 		fmt.Println("Assistant role message tool call:", toolCall.Function.Name, toolCall.ID)
-		bedrockMessage.Content = append(bedrockMessage.Content,
-			&awsbedrock.ContentBlock{
-				ToolUse: &awsbedrock.ToolUseBlock{
-					Name:      toolCall.Function.Name,
-					ToolUseID: toolCall.ID,
-					Input:     input,
-				},
-			})
+		//bedrockMessage.Content = append(bedrockMessage.Content,
+		//	&awsbedrock.ContentBlock{
+		//		ToolUse: &awsbedrock.ToolUseBlock{
+		//			Name:      toolCall.Function.Name,
+		//			ToolUseID: toolCall.ID,
+		//			Input:     input,
+		//		},
+		//	})
+		bedrockMessage.Content[0].ToolUse = &awsbedrock.ToolUseBlock{
+			Name:      toolCall.Function.Name,
+			ToolUseID: toolCall.ID,
+			Input:     input,
+		}
 		fmt.Printf("tool use assistant %v \n %v", toolCall.Function.Name, input)
 	}
 	fmt.Printf("\n length of assistant content block %v", len(bedrockMessage.Content))
