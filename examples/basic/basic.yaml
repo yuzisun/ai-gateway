@@ -111,7 +111,8 @@ metadata:
 spec:
   type: AWSCredentials
   awsCredentials:
-    region: us-east-1
+#    region: us-east-1
+    region: eu-central-1
     credentialsFile:
       secretRef:
         name: envoy-ai-gateway-basic-aws-credentials
@@ -135,7 +136,8 @@ metadata:
 spec:
   endpoints:
     - fqdn:
-        hostname: bedrock-runtime.us-east-1.amazonaws.com
+#        hostname: bedrock-runtime.us-east-1.amazonaws.com
+        hostname: bedrock-runtime.eu-central-1.amazonaws.com
         port: 443
 ---
 apiVersion: gateway.networking.k8s.io/v1alpha3
@@ -164,7 +166,8 @@ spec:
       name: envoy-ai-gateway-basic-aws
   validation:
     wellKnownCACertificates: "System"
-    hostname: bedrock-runtime.us-east-1.amazonaws.com
+#    hostname: bedrock-runtime.us-east-1.amazonaws.com
+    hostname: bedrock-runtime.eu-central-1.amazonaws.com
 ---
 apiVersion: v1
 kind: Secret

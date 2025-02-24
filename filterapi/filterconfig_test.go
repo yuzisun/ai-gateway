@@ -93,7 +93,8 @@ rules:
 	require.Equal(t, "OpenAI", string(cfg.Rules[1].Backends[0].Schema.Name))
 	require.Equal(t, "apikey.txt", cfg.Rules[0].Backends[0].Auth.APIKey.Filename)
 	require.Equal(t, "aws.txt", cfg.Rules[0].Backends[1].Auth.AWSAuth.CredentialFileName)
-	require.Equal(t, "us-east-1", cfg.Rules[0].Backends[1].Auth.AWSAuth.Region)
+	//require.Equal(t, "us-east-1", cfg.Rules[0].Backends[1].Auth.AWSAuth.Region)
+	require.Equal(t, "eu-central-1", cfg.Rules[0].Backends[1].Auth.AWSAuth.Region)
 
 	t.Run("not found", func(t *testing.T) {
 		_, _, err := filterapi.UnmarshalConfigYaml("not-found.yaml")

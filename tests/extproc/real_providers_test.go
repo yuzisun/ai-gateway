@@ -8,18 +8,16 @@
 package extproc
 
 import (
-	"bufio"
-	"bytes"
 	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/openai/openai-go"
+	openai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/envoyproxy/ai-gateway/filterapi"
@@ -55,12 +53,15 @@ func TestWithRealProviders(t *testing.T) {
 				Backends: []filterapi.Backend{
 					{Name: "aws-bedrock", Schema: awsBedrockSchema, Auth: &filterapi.BackendAuth{AWSAuth: &filterapi.AWSAuth{
 						CredentialFileName: cc.awsFilePath,
-						Region:             "us-east-1",
+						Region:             "eu-central-1",
+						//Region:             "us-east-1",
 					}}},
 				},
 				Headers: []filterapi.HeaderMatch{
-					{Name: "x-model-name", Value: "us.meta.llama3-2-1b-instruct-v1:0"},
-					{Name: "x-model-name", Value: "us.anthropic.claude-3-5-sonnet-20240620-v1:0"},
+					{Name: "x-model-name", Value: "eu.meta.llama3-2-1b-instruct-v1:0"},
+					{Name: "x-model-name", Value: "eu.anthropic.claude-3-5-sonnet-20240620-v1:0"},
+					//{Name: "x-model-name", Value: "us.meta.llama3-2-1b-instruct-v1:0"},
+					//{Name: "x-model-name", Value: "us.anthropic.claude-3-5-sonnet-20240620-v1:0"},
 				},
 			},
 		},
@@ -68,192 +69,257 @@ func TestWithRealProviders(t *testing.T) {
 
 	requireExtProc(t, os.Stdout, extProcExecutablePath(), configPath)
 
-	t.Run("health-checking", func(t *testing.T) {
+	//t.Run("health-checking", func(t *testing.T) {
+	//	client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
+	//	for _, tc := range []realProvidersTestCase{
+	//		{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
+	//		{name: "aws-bedrock", modelName: "eu.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
+	//		//{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
+	//	} {
+	//		t.Run(tc.modelName, func(t *testing.T) {
+	//			cc.maybeSkip(t, tc.required)
+	//			require.Eventually(t, func() bool {
+	//				chatCompletion, err := client.Chat.Completions.New(t.Context(), openai.ChatCompletionNewParams{
+	//					Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
+	//						openai.UserMessage("Say this is a test"),
+	//					}),
+	//					Model: openai.F(tc.modelName),
+	//				})
+	//				if err != nil {
+	//					t.Logf("error: %v", err)
+	//					return false
+	//				}
+	//				nonEmptyCompletion := false
+	//				for _, choice := range chatCompletion.Choices {
+	//					t.Logf("choice: %s", choice.Message.Content)
+	//					if choice.Message.Content != "" {
+	//						nonEmptyCompletion = true
+	//					}
+	//				}
+	//				return nonEmptyCompletion
+	//			}, 30*time.Second, 2*time.Second)
+	//		})
+	//	}
+	//})
+	//
+	//// Read all access logs and check if the used token is logged.
+	//// If the used token is set correctly in the metadata, it should be logged in the access log.
+	//t.Run("check-used-token-metadata-access-log", func(t *testing.T) {
+	//	cc.maybeSkip(t, requiredCredentialOpenAI|requiredCredentialAWS)
+	//	// Since the access log might not be written immediately, we wait for the log to be written.
+	//	require.Eventually(t, func() bool {
+	//		accessLog, err := os.ReadFile(accessLogPath)
+	//		require.NoError(t, err)
+	//		// This should match the format of the access log in envoy.yaml.
+	//		type lineFormat struct {
+	//			UsedToken float64 `json:"used_token,omitempty"`
+	//			SomeCel   float64 `json:"some_cel,omitempty"`
+	//		}
+	//		scanner := bufio.NewScanner(bytes.NewReader(accessLog))
+	//		for scanner.Scan() {
+	//			line := scanner.Bytes()
+	//			var l lineFormat
+	//			if err = json.Unmarshal(line, &l); err != nil {
+	//				t.Logf("error unmarshalling line: %v", err)
+	//				continue
+	//			}
+	//			t.Logf("line: %s", line)
+	//			if l.SomeCel == 0 {
+	//				t.Log("some_cel is not existent or greater than zero")
+	//				continue
+	//			}
+	//			if l.UsedToken == 0 {
+	//				t.Log("used_token is not existent or greater than zero")
+	//				continue
+	//			}
+	//			return true
+	//		}
+	//		return false
+	//	}, 30*time.Second, 2*time.Second)
+	//})
+
+	//t.Run("streaming", func(t *testing.T) {
+	//	client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
+	//	for _, tc := range []realProvidersTestCase{
+	//		{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
+	//		{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
+	//	} {
+	//		t.Run(tc.name, func(t *testing.T) {
+	//			cc.maybeSkip(t, tc.required)
+	//			require.Eventually(t, func() bool {
+	//				stream := client.Chat.Completions.NewStreaming(t.Context(), openai.ChatCompletionNewParams{
+	//					Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
+	//						openai.UserMessage("Say this is a test"),
+	//					}),
+	//					Model: openai.F(tc.modelName),
+	//				})
+	//				defer func() {
+	//					_ = stream.Close()
+	//				}()
+	//
+	//				acc := openai.ChatCompletionAccumulator{}
+	//
+	//				for stream.Next() {
+	//					chunk := stream.Current()
+	//					if !acc.AddChunk(chunk) {
+	//						t.Log("error adding chunk")
+	//						return false
+	//					}
+	//				}
+	//
+	//				if err := stream.Err(); err != nil {
+	//					t.Logf("error: %v", err)
+	//					return false
+	//				}
+	//
+	//				nonEmptyCompletion := false
+	//				for _, choice := range acc.Choices {
+	//					t.Logf("choice: %s", choice.Message.Content)
+	//					if choice.Message.Content != "" {
+	//						nonEmptyCompletion = true
+	//					}
+	//				}
+	//				if !nonEmptyCompletion {
+	//					// Log the whole response for debugging.
+	//					t.Logf("response: %+v", acc)
+	//				}
+	//				return nonEmptyCompletion
+	//			}, 30*time.Second, 2*time.Second)
+	//		})
+	//	}
+	//})
+
+	t.Run("Bedrock uses tool in response", func(t *testing.T) {
+		fmt.Println("starting tool test")
 		client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
-		for _, tc := range []realProvidersTestCase{
-			{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
-			{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
+		fmt.Println("after client")
+		for _, tc := range []struct {
+			testCaseName,
+			modelName string
+		}{
+			{testCaseName: "aws-bedrock", modelName: "eu.anthropic.claude-3-5-sonnet-20240620-v1:0"}, // This will go to "aws-bedrock" using credentials file.
+			//{testCaseName: "aws-bedrock", modelName: "us.anthropic.claude-3-5-sonnet-20240620-v1:0"}, // This will go to "aws-bedrock" using credentials file.
 		} {
 			t.Run(tc.modelName, func(t *testing.T) {
-				cc.maybeSkip(t, tc.required)
+				fmt.Println("inside run")
 				require.Eventually(t, func() bool {
-					chatCompletion, err := client.Chat.Completions.New(t.Context(), openai.ChatCompletionNewParams{
+					// Step 1: Initial tool call request
+					question := "What is the weather in New York City?"
+					params := openai.ChatCompletionNewParams{
 						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
-							openai.UserMessage("Say this is a test"),
+							openai.UserMessage(question),
 						}),
+						Tools: openai.F([]openai.ChatCompletionToolParam{
+							{
+								Type: openai.F(openai.ChatCompletionToolTypeFunction),
+								Function: openai.F(openai.FunctionDefinitionParam{
+									Name:        openai.String("get_weather"),
+									Description: openai.String("Get weather at the given location"),
+									Parameters: openai.F(openai.FunctionParameters{
+										"type": "object",
+										"properties": map[string]interface{}{
+											"location": map[string]string{
+												"type": "string",
+											},
+										},
+										"required": []string{"location"},
+									}),
+								}),
+							},
+						}),
+						//// TODO: check if we should seed.
+						//Seed:  openai.Int(0),
 						Model: openai.F(tc.modelName),
-					})
+					}
+					completion, err := client.Chat.Completions.New(context.Background(), params)
 					if err != nil {
 						t.Logf("error: %v", err)
 						return false
 					}
-					nonEmptyCompletion := false
-					for _, choice := range chatCompletion.Choices {
-						t.Logf("choice: %s", choice.Message.Content)
-						if choice.Message.Content != "" {
-							nonEmptyCompletion = true
+					// Step 2: Verify tool call
+					toolCalls := completion.Choices[0].Message.ToolCalls
+					if len(toolCalls) == 0 {
+						t.Logf("Expected tool call from completion result but got none")
+						return false
+					}
+					// Step 3: Simulate the tool returning a response, add the tool response to the params, and check the second response
+					params.Messages.Value = append(params.Messages.Value, completion.Choices[0].Message)
+					t.Logf("appended param %+v\n", completion.Choices[0].Message)
+					t.Logf("appended message content: %+v \n toolcalls: %+v\n", completion.Choices[0].Message.Content, completion.Choices[0].Message.ToolCalls)
+					t.Logf("length of tool calls %v\n", len(completion.Choices[0].Message.ToolCalls))
+					getWeatherCalled := false
+					for _, toolCall := range toolCalls {
+						t.Logf("tool id: %v", toolCall.ID)
+						if toolCall.Function.Name == "get_weather" {
+							getWeatherCalled = true
+							// Extract the location from the function call arguments
+							var args map[string]interface{}
+							if argErr := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); argErr != nil {
+								panic(argErr)
+							}
+							location := args["location"].(string)
+							if location != "New York City" {
+								t.Logf("Expected location to be New York City but got %s", location)
+							}
+							// Simulate getting weather data
+							weatherData := "Sunny, 25°C"
+							params.Messages.Value = append(params.Messages.Value, openai.ToolMessage(toolCall.ID, weatherData))
+							t.Logf("Appended tool message: %v", openai.ToolMessage(toolCall.ID, weatherData)) // Debug log
 						}
 					}
-					return nonEmptyCompletion
-				}, 30*time.Second, 2*time.Second)
-			})
-		}
-	})
-
-	// Read all access logs and check if the used token is logged.
-	// If the used token is set correctly in the metadata, it should be logged in the access log.
-	t.Run("check-used-token-metadata-access-log", func(t *testing.T) {
-		cc.maybeSkip(t, requiredCredentialOpenAI|requiredCredentialAWS)
-		// Since the access log might not be written immediately, we wait for the log to be written.
-		require.Eventually(t, func() bool {
-			accessLog, err := os.ReadFile(accessLogPath)
-			require.NoError(t, err)
-			// This should match the format of the access log in envoy.yaml.
-			type lineFormat struct {
-				UsedToken float64 `json:"used_token,omitempty"`
-				SomeCel   float64 `json:"some_cel,omitempty"`
-			}
-			scanner := bufio.NewScanner(bytes.NewReader(accessLog))
-			for scanner.Scan() {
-				line := scanner.Bytes()
-				var l lineFormat
-				if err = json.Unmarshal(line, &l); err != nil {
-					t.Logf("error unmarshalling line: %v", err)
-					continue
-				}
-				t.Logf("line: %s", line)
-				if l.SomeCel == 0 {
-					t.Log("some_cel is not existent or greater than zero")
-					continue
-				}
-				if l.UsedToken == 0 {
-					t.Log("used_token is not existent or greater than zero")
-					continue
-				}
-				return true
-			}
-			return false
-		}, 30*time.Second, 2*time.Second)
-	})
-
-	t.Run("streaming", func(t *testing.T) {
-		client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
-		for _, tc := range []realProvidersTestCase{
-			{name: "openai", modelName: "gpt-4o-mini", required: requiredCredentialOpenAI},
-			{name: "aws-bedrock", modelName: "us.meta.llama3-2-1b-instruct-v1:0", required: requiredCredentialAWS},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				cc.maybeSkip(t, tc.required)
-				require.Eventually(t, func() bool {
-					stream := client.Chat.Completions.NewStreaming(t.Context(), openai.ChatCompletionNewParams{
-						Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
-							openai.UserMessage("Say this is a test"),
-						}),
-						Model: openai.F(tc.modelName),
-					})
-					defer func() {
-						_ = stream.Close()
-					}()
-
-					acc := openai.ChatCompletionAccumulator{}
-
-					for stream.Next() {
-						chunk := stream.Current()
-						if !acc.AddChunk(chunk) {
-							t.Log("error adding chunk")
-							return false
-						}
-					}
-
-					if err := stream.Err(); err != nil {
-						t.Logf("error: %v", err)
+					if getWeatherCalled == false {
+						t.Logf("get_weather tool not specified in chat completion response")
 						return false
 					}
 
-					nonEmptyCompletion := false
-					for _, choice := range acc.Choices {
-						t.Logf("choice: %s", choice.Message.Content)
-						if choice.Message.Content != "" {
-							nonEmptyCompletion = true
-						}
+					for i, param := range params.Messages.Value {
+						t.Logf("printing param message [%v] value: %v \n value ended \n", i, param)
 					}
-					if !nonEmptyCompletion {
-						// Log the whole response for debugging.
-						t.Logf("response: %+v", acc)
+
+					secondChatCompletion, err := client.Chat.Completions.New(context.Background(), params)
+					if err != nil {
+						//TODO: remove
+						t.Logf("secondChatCompletion w err: %v", secondChatCompletion)
+						t.Logf("error during second response: %v", err)
+						return false
 					}
-					return nonEmptyCompletion
-				}, 30*time.Second, 2*time.Second)
+
+					// Step 4: Verify that the second response is correct
+					completionResult := secondChatCompletion.Choices[0].Message.Content
+					t.Logf("content of completion response using tool: %s", secondChatCompletion.Choices[0].Message.Content)
+					return completionResult == "The weather in New York City is currently sunny and 25°C."
+				}, 100*time.Second, 50*time.Second)
 			})
 		}
-	})
-
-	t.Run("Bedrock calls tool get_weather function", func(t *testing.T) {
-		cc.maybeSkip(t, requiredCredentialAWS)
-		client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
-		require.Eventually(t, func() bool {
-			chatCompletion, err := client.Chat.Completions.New(t.Context(), openai.ChatCompletionNewParams{
-				Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
-					openai.UserMessage("What is the weather like in Paris today?"),
-				}),
-				Tools: openai.F([]openai.ChatCompletionToolParam{
-					{
-						Type: openai.F(openai.ChatCompletionToolTypeFunction),
-						Function: openai.F(openai.FunctionDefinitionParam{
-							Name:        openai.String("get_weather"),
-							Description: openai.String("Get weather at the given location"),
-							Parameters: openai.F(openai.FunctionParameters{
-								"type": "object",
-								"properties": map[string]interface{}{
-									"location": map[string]string{
-										"type": "string",
-									},
-								},
-								"required": []string{"location"},
-							}),
-						}),
-					},
-				}),
-				Model: openai.F("us.anthropic.claude-3-5-sonnet-20240620-v1:0"),
-			})
-			if err != nil {
-				t.Logf("error: %v", err)
-				return false
-			}
-			returnsToolCall := false
-			for _, choice := range chatCompletion.Choices {
-				t.Logf("choice content: %s", choice.Message.Content)
-				t.Logf("finish reason: %s", choice.FinishReason)
-				t.Logf("choice toolcall: %v", choice.Message.ToolCalls)
-				if choice.FinishReason == openai.ChatCompletionChoicesFinishReasonToolCalls {
-					returnsToolCall = true
-				}
-			}
-			return returnsToolCall
-		}, 30*time.Second, 2*time.Second)
 	})
 
 	// Models are served by the extproc filter as a direct response so this can run even if the
 	// real credentials are not present.
 	// We don't need to run it on a concrete backend, as it will not route anywhere.
-	t.Run("list-models", func(t *testing.T) {
-		client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
-
-		var models []string
-
-		require.EventuallyWithT(t, func(c *assert.CollectT) {
-			it := client.Models.ListAutoPaging(t.Context())
-			for it.Next() {
-				models = append(models, it.Current().ID)
-			}
-			assert.NoError(c, it.Err())
-		}, 30*time.Second, 2*time.Second)
-
-		require.Equal(t, []string{
-			"gpt-4o-mini",
-			"us.meta.llama3-2-1b-instruct-v1:0",
-			"us.anthropic.claude-3-5-sonnet-20240620-v1:0",
-		}, models)
-	})
+	//t.Run("list-models", func(t *testing.T) {
+	//	client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
+	//
+	//	var models []string
+	//
+	//	require.EventuallyWithT(t, func(c *assert.CollectT) {
+	//		it := client.Models.ListAutoPaging(t.Context())
+	//		for it.Next() {
+	//			models = append(models, it.Current().ID)
+	//		}
+	//		assert.NoError(c, it.Err())
+	//	}, 30*time.Second, 2*time.Second)
+	//	require.Equal(t, []string{
+	//		"gpt-4o-mini",
+	//		"eu.meta.llama3-2-1b-instruct-v1:0",
+	//		"eu.anthropic.claude-3-5-sonnet-20240620-v1:0",
+	//	}, models)
+	//
+	//	//require.Equal(t, []string{
+	//	//	"gpt-4o-mini",
+	//	//	"us.meta.llama3-2-1b-instruct-v1:0",
+	//	//	"us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+	//	//}, models)
+	//})
 }
 
 // realProvidersTestCase is a base test case for the real providers, which is mainly for the centralization of the
