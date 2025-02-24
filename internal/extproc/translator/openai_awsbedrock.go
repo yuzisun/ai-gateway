@@ -106,6 +106,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 				fmt.Printf("[%v] toolUse.name: %v, tooluse.input %v\n", i, c.ToolUse.Name, c.ToolUse.Input)
 			}
 		}
+	}
 
 	// Convert ToolConfiguration.
 	if len(openAIReq.Tools) > 0 {
