@@ -658,12 +658,15 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 	}
 	fmt.Printf("\nbedrock output message from converse: %v\n", len(bedrockResp.Output.Message.Content))
 	for i, cont := range bedrockResp.Output.Message.Content {
-		fmt.Printf("[%v] content message in response: %v", i, cont.Text)
+		if cont.Text != nil {
+			fmt.Printf("[%v] content message in response: %v\n", i, *cont.Text)
+		}
 	}
 
+	fmt.Printf("(len(bedrockResp.Output.Message.Content): %v", len(bedrockResp.Output.Message.Content))
 	openAIResp := openai.ChatCompletionResponse{
 		Object:  "chat.completion",
-		Choices: make([]openai.ChatCompletionResponseChoice, 0, len(bedrockResp.Output.Message.Content)),
+		Choices: make([]openai.ChatCompletionResponseChoice, 0),
 	}
 	// Convert token usage.
 	if bedrockResp.Usage != nil {
@@ -689,7 +692,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(respHeaders 
 			},
 			FinishReason: o.bedrockStopReasonToOpenAIStopReason(bedrockResp.StopReason),
 		}
-
+		fmt.Printf("merging choices %+v", choice)
 		if output.Text != nil {
 			choice.Message.Content = output.Text
 		}
