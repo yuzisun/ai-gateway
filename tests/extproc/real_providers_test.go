@@ -245,7 +245,7 @@ func TestWithRealProviders(t *testing.T) {
 					// Step 3: Simulate the tool returning a response, add the tool response to the params, and check the second response
 					fmt.Printf("len params message values after first call %v\n", len(params.Messages.Value))
 					for idx, msg := range params.Messages.Value {
-						fmt.Printf("\n printing message value [%v] %v \n", idx, params.Messages.Value)
+						fmt.Printf("\n printing message value [%v] %v \n", idx, msg)
 					}
 					params.Messages.Value = append(params.Messages.Value, completion.Choices[0].Message)
 					getWeatherCalled := false
