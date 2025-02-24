@@ -243,12 +243,9 @@ func TestWithRealProviders(t *testing.T) {
 						return false
 					}
 					// Step 3: Simulate the tool returning a response, add the tool response to the params, and check the second response
-					message := openai.ChatCompletionChoice{
-						FinishReason: openai.ChatCompletionChoicesFinishReasonToolCalls,
-						Message: openai.ChatCompletionMessage{
-							Content: "Certainly! I can help you get the weather information for New York City. To do this, I'll use the available weather tool. Let me fetch that information for you right away.",
-							Role:    openai.ChatCompletionMessageRoleAssistant,
-						},
+					message := openai.ChatCompletionMessage{
+						Content: "Certainly! I can help you get the weather information for New York City. To do this, I'll use the available weather tool. Let me fetch that information for you right away.",
+						Role:    openai.ChatCompletionMessageRoleAssistant,
 					}
 					//params.Messages.Value = append(params.Messages.Value, completion.Choices[0].Message)
 					params.Messages.Value = append(params.Messages.Value, message)
