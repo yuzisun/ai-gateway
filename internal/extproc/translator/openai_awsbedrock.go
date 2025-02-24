@@ -95,10 +95,10 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 				fmt.Printf("[%v] c.txt: %v, \n", i, *c.Text)
 			}
 			if c.ToolResult != nil {
-				fmt.Printf("content length: %v", len(c.ToolResult.Content))
+				fmt.Printf("content length: %v\n", len(c.ToolResult.Content))
 				for a, cont := range c.ToolResult.Content {
 					if cont.Text != nil {
-						fmt.Printf("[%v] c.toolResult.content: %v, c.toolResult.ID: %v\n", a, cont.Text, c.ToolResult.ToolUseID)
+						fmt.Printf("[%v] c.toolResult.content: %v, c.toolResult.ID: %v\n", a, *cont.Text, *c.ToolResult.ToolUseID)
 					}
 				}
 			}
@@ -106,7 +106,6 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 				fmt.Printf("[%v] toolUse.name: %v, tooluse.input %v\n", i, c.ToolUse.Name, c.ToolUse.Input)
 			}
 		}
-	}
 
 	// Convert ToolConfiguration.
 	if len(openAIReq.Tools) > 0 {
@@ -125,10 +124,10 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 				fmt.Printf("[%v] c.txt: %v, \n", i, *c.Text)
 			}
 			if c.ToolResult != nil {
-				fmt.Printf("content length: %v", len(c.ToolResult.Content))
+				fmt.Printf("content length: %v\n", len(c.ToolResult.Content))
 				for a, cont := range c.ToolResult.Content {
 					if cont.Text != nil {
-						fmt.Printf("[%v] c.toolResult.content: %v, c.toolResult.ID: %v\n", a, cont.Text, c.ToolResult.ToolUseID)
+						fmt.Printf("[%v] c.toolResult.content: %v, c.toolResult.ID: %v\n", a, *cont.Text, *c.ToolResult.ToolUseID)
 					}
 				}
 			}
