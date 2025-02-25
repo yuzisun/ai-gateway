@@ -332,11 +332,23 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 			},
 		}
 	case []openai.ChatCompletionContentPartTextParam:
+		var combinedText string
+		// todo remove
+		fmt.Printf("\n number of txt to combine %v\n", len(v))
 		for _, part := range v {
-			content = append(content, &awsbedrock.ToolResultContentBlock{
-				Text: &part.Text,
-			})
+			fmt.Printf("\n text to combine: %v\n", part.Text)
+			combinedText += part.Text
 		}
+		content = []*awsbedrock.ToolResultContentBlock{
+			{
+				Text: &combinedText,
+			},
+		}
+		//for _, part := range v {
+		//	content = append(content, &awsbedrock.ToolResultContentBlock{
+		//		Text: &part.Text,
+		//	})
+		//}
 
 	default:
 		return nil, fmt.Errorf("unexpected content type for tool message: %T", openAiMessage.Content.Value)
