@@ -83,6 +83,7 @@ func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_RequestBody(t *testing.T) 
 							Content: openai.StringOrArray{
 								Value: "Weather in Queens, NY is 70F and clear skies.",
 							},
+							ToolCallID: "call_6g7a",
 						}, Type: openai.ChatMessageRoleTool,
 					},
 					{
@@ -144,6 +145,7 @@ func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_RequestBody(t *testing.T) 
 						Content: []*awsbedrock.ContentBlock{
 							{
 								ToolResult: &awsbedrock.ToolResultBlock{
+									ToolUseID: ptr.To("call_6g7a"),
 									Content: []*awsbedrock.ToolResultContentBlock{
 										{
 											Text: ptr.To("Weather in Queens, NY is 70F and clear skies."),

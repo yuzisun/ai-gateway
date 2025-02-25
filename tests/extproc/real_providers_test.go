@@ -275,8 +275,8 @@ func TestWithRealProviders(t *testing.T) {
 					// Step 4: Verify that the second response is correct
 					completionResult := secondChatCompletion.Choices[0].Message.Content
 					t.Logf("content of completion response using tool: %s", secondChatCompletion.Choices[0].Message.Content)
-					return !strings.Contains(completionResult, "New York City") && strings.Contains(completionResult, "sunny") && strings.Contains(completionResult, "25°C")
-				}, 100*time.Second, 50*time.Second)
+					return strings.Contains(completionResult, "New York City") && strings.Contains(completionResult, "sunny") && strings.Contains(completionResult, "25°C")
+				}, 60*time.Second, 4*time.Second)
 			})
 		}
 	})

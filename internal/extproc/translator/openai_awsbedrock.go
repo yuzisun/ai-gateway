@@ -98,7 +98,6 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 	if mut.Body, err = json.Marshal(bedrockReq); err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to marshal body: %w", err)
 	}
-	fmt.Printf("\nprinting body mutation %v\n", string(mut.Body))
 	setContentLength(headerMutation, mut.Body)
 	return headerMutation, &extprocv3.BodyMutation{Mutation: mut}, override, nil
 }
@@ -332,23 +331,11 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 			},
 		}
 	case []openai.ChatCompletionContentPartTextParam:
-		var combinedText string
-		// todo remove
-		fmt.Printf("\n number of txt to combine %v\n", len(v))
 		for _, part := range v {
-			fmt.Printf("\n text to combine: %v\n", part.Text)
-			combinedText += part.Text
+			content = append(content, &awsbedrock.ToolResultContentBlock{
+				Text: &part.Text,
+			})
 		}
-		content = []*awsbedrock.ToolResultContentBlock{
-			{
-				Text: &combinedText,
-			},
-		}
-		//for _, part := range v {
-		//	content = append(content, &awsbedrock.ToolResultContentBlock{
-		//		Text: &part.Text,
-		//	})
-		//}
 
 	default:
 		return nil, fmt.Errorf("unexpected content type for tool message: %T", openAiMessage.Content.Value)
