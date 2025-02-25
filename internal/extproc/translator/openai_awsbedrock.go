@@ -327,6 +327,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 							Text: &text,
 						},
 					},
+					ToolUseID: &openAiMessage.ToolCallID,
 				},
 			},
 		},
