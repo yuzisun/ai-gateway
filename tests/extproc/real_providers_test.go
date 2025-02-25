@@ -228,7 +228,7 @@ func TestWithRealProviders(t *testing.T) {
 							},
 						}),
 						//// TODO: check if we should seed.
-						//Seed:  openai.Int(0),
+						Seed:  openai.Int(0),
 						Model: openai.F(tc.modelName),
 					}
 					completion, err := client.Chat.Completions.New(context.Background(), params)
@@ -287,7 +287,7 @@ func TestWithRealProviders(t *testing.T) {
 					// Step 4: Verify that the second response is correct
 					completionResult := secondChatCompletion.Choices[0].Message.Content
 					t.Logf("content of completion response using tool: %s", secondChatCompletion.Choices[0].Message.Content)
-					return completionResult == "The weather in New York City is currently sunny and 25°C."
+					return completionResult == "New York City is sunny with a temperature of 25°C"
 				}, 100*time.Second, 50*time.Second)
 			})
 		}
