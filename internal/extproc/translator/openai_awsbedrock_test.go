@@ -79,6 +79,13 @@ func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_RequestBody(t *testing.T) 
 						}, Type: openai.ChatMessageRoleUser,
 					},
 					{
+						Value: openai.ChatCompletionToolMessageParam{
+							Content: openai.StringOrArray{
+								Value: "Weather in Queens, NY is 70F and clear skies.",
+							},
+						}, Type: openai.ChatMessageRoleTool,
+					},
+					{
 						Value: openai.ChatCompletionAssistantMessageParam{
 							Content: openai.ChatCompletionAssistantMessageParamContent{
 								Text: ptr.To("I dunno"),
@@ -129,6 +136,20 @@ func TestOpenAIToAWSBedrockTranslatorV1ChatCompletion_RequestBody(t *testing.T) 
 						Content: []*awsbedrock.ContentBlock{
 							{
 								Text: ptr.To("part2"),
+							},
+						},
+					},
+					{
+						Role: openai.ChatMessageRoleUser,
+						Content: []*awsbedrock.ContentBlock{
+							{
+								ToolResult: &awsbedrock.ToolResultBlock{
+									Content: []*awsbedrock.ToolResultContentBlock{
+										{
+											Text: ptr.To("Weather in Queens, NY is 70F and clear skies."),
+										},
+									},
+								},
 							},
 						},
 					},
