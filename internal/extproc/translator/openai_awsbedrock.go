@@ -311,6 +311,12 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMessageRoleTool(
 	openAiMessage *openai.ChatCompletionToolMessageParam, role string,
 ) (*awsbedrock.Message, error) {
+	text := ""
+	if t, ok := openAiMessage.Content.Value.(string); ok {
+		text = t
+	} else if content, ok := openAiMessage.Content.Value.([]openai.ChatCompletionContentPartTextParam); ok {
+		text = content[0].Text
+	}
 	return &awsbedrock.Message{
 		Role: role,
 		Content: []*awsbedrock.ContentBlock{
@@ -318,7 +324,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 				ToolResult: &awsbedrock.ToolResultBlock{
 					Content: []*awsbedrock.ToolResultContentBlock{
 						{
-							Text: openAiMessage.Content.Value.(*string),
+							Text: &text,
 						},
 					},
 				},
