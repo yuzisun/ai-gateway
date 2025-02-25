@@ -191,9 +191,7 @@ func TestWithRealProviders(t *testing.T) {
 	//})
 
 	t.Run("Bedrock uses tool in response", func(t *testing.T) {
-		fmt.Println("starting tool test")
 		client := openai.NewClient(option.WithBaseURL(listenerAddress + "/v1/"))
-		fmt.Println("after client")
 		for _, tc := range []struct {
 			testCaseName,
 			modelName string
@@ -228,7 +226,6 @@ func TestWithRealProviders(t *testing.T) {
 								}),
 							},
 						}),
-						//// TODO: check if we should seed.
 						Seed:  openai.Int(0),
 						Model: openai.F(tc.modelName),
 					}
@@ -245,12 +242,8 @@ func TestWithRealProviders(t *testing.T) {
 					}
 					// Step 3: Simulate the tool returning a response, add the tool response to the params, and check the second response
 					params.Messages.Value = append(params.Messages.Value, completion.Choices[0].Message)
-					t.Logf("appended param %+v\n", completion.Choices[0].Message)
-					t.Logf("appended message content: %+v \n toolcalls: %+v\n", completion.Choices[0].Message.Content, completion.Choices[0].Message.ToolCalls)
-					t.Logf("length of tool calls %v\n", len(completion.Choices[0].Message.ToolCalls))
 					getWeatherCalled := false
 					for _, toolCall := range toolCalls {
-						t.Logf("tool id: %v", toolCall.ID)
 						if toolCall.Function.Name == "get_weather" {
 							getWeatherCalled = true
 							// Extract the location from the function call arguments
@@ -273,14 +266,8 @@ func TestWithRealProviders(t *testing.T) {
 						return false
 					}
 
-					for i, param := range params.Messages.Value {
-						t.Logf("printing param message [%v] value: %v \n value ended \n", i, param)
-					}
-
 					secondChatCompletion, err := client.Chat.Completions.New(context.Background(), params)
 					if err != nil {
-						//TODO: remove
-						t.Logf("secondChatCompletion w err: %v", secondChatCompletion)
 						t.Logf("error during second response: %v", err)
 						return false
 					}

@@ -121,10 +121,8 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) RequestBody(body RequestB
 	if mut.Body, err = json.Marshal(bedrockReq); err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to marshal body: %w", err)
 	}
+	//todo remove
 	fmt.Printf("\nprinting body mutation %v\n", string(mut.Body))
-	if headerMutation != nil {
-		fmt.Printf("printing header mutation %v\n", *headerMutation)
-	}
 	setContentLength(headerMutation, mut.Body)
 	return headerMutation, &extprocv3.BodyMutation{Mutation: mut}, override, nil
 }
@@ -218,7 +216,6 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 	openAiMessage *openai.ChatCompletionUserMessageParam, role string,
 ) (*awsbedrock.Message, error) {
 	if v, ok := openAiMessage.Content.Value.(string); ok {
-		fmt.Println("User role message content (string):", v)
 		return &awsbedrock.Message{
 			Role: role,
 			Content: []*awsbedrock.ContentBlock{
@@ -226,14 +223,12 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 			},
 		}, nil
 	} else if contents, ok := openAiMessage.Content.Value.([]openai.ChatCompletionContentPartUserUnionParam); ok {
-		fmt.Println("User role message content (array):", contents)
 		chatMessage := &awsbedrock.Message{Role: role}
 		chatMessage.Content = make([]*awsbedrock.ContentBlock, 0, len(contents))
 		for i := range contents {
 			contentPart := &contents[i]
 			if contentPart.TextContent != nil {
 				textContentPart := contentPart.TextContent
-				fmt.Println("User role message text content:", textContentPart.Text)
 				chatMessage.Content = append(chatMessage.Content, &awsbedrock.ContentBlock{
 					Text: &textContentPart.Text,
 				})
@@ -257,7 +252,6 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 					return nil, fmt.Errorf("unsupported image type: %s please use one of [png, jpeg, gif, webp]",
 						contentType)
 				}
-				fmt.Println("User role message image content:", format)
 				chatMessage.Content = append(chatMessage.Content, &awsbedrock.ContentBlock{
 					Image: &awsbedrock.ImageBlock{
 						Format: format,
@@ -288,19 +282,12 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 	openAiMessage *openai.ChatCompletionAssistantMessageParam, role string,
 ) (*awsbedrock.Message, error) {
 	var bedrockMessage *awsbedrock.Message
-	//contentBlocks := make([]*awsbedrock.ContentBlock, 0)
-	//todo
-	contentBlocks := []*awsbedrock.ContentBlock{}
-	fmt.Println("starting translation for assistant")
+	contentBlocks := make([]*awsbedrock.ContentBlock, 0)
 	if openAiMessage.Content.Type == openai.ChatCompletionAssistantMessageParamContentTypeRefusal {
-		fmt.Println("Assistant role message content (refusal):", openAiMessage.Content.Refusal)
 		contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Refusal})
-	} else {
-		if openAiMessage.Content.Text != nil {
-			fmt.Println("Assistant role message content (text):", openAiMessage.Content.Text)
-			contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Text})
-		}
-		//TODO: we are missing this in second response
+	} else if openAiMessage.Content.Text != nil {
+		//TODO: we sometimes miss the resp
+		contentBlocks = append(contentBlocks, &awsbedrock.ContentBlock{Text: openAiMessage.Content.Text})
 	}
 	bedrockMessage = &awsbedrock.Message{
 		Role:    role,
@@ -312,7 +299,6 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 		if err != nil {
 			return nil, err
 		}
-		fmt.Println("Assistant role message tool call:", toolCall.Function.Name, toolCall.ID)
 		bedrockMessage.Content = append(bedrockMessage.Content,
 			&awsbedrock.ContentBlock{
 				ToolUse: &awsbedrock.ToolUseBlock{
@@ -321,9 +307,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) openAIMessageToBedrockMes
 					Input:     input,
 				},
 			})
-		fmt.Printf("tool use assistant %v \n %v", toolCall.Function.Name, input)
 	}
-	fmt.Printf("\n length of assistant content block %v", len(bedrockMessage.Content))
 	return bedrockMessage, nil
 }
 
