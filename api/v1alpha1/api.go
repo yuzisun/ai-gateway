@@ -258,6 +258,11 @@ type AIGatewayRouteRuleBackendRef struct {
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:default=1
 	Weight int `json:"weight,omitempty"`
+
+	// RetryPriority is the retry priority of the AIServiceBackend. If the value is 0, that's the primary backend.
+	// If the request fails on the primary backend, it retries on the other backends in the backendRef list in order of
+	// the priority.
+	RetryPriority *int `json:"retryPriority,omitempty"`
 }
 
 type AIGatewayRouteRuleMatch struct {

@@ -1373,7 +1373,7 @@ func TestAIGatewayRouteController_createDynamicLoadBalancing(t *testing.T) {
 					Kind: ptr.To[gwapiv1.Kind]("Backend"),
 				}},
 			}})
-			require.ErrorContains(t, err, "port mismatch: InferecePool mypool has port 1234, but Backend bar has port 11111")
+			require.ErrorContains(t, err, "port mismatch: InferencePool mypool has port 1234, but Backend bar has port 11111")
 		})
 		t.Run("FQDN.Port not match", func(t *testing.T) {
 			require.NoError(t, fakeClient.Create(t.Context(), &egv1a1.Backend{
@@ -1389,7 +1389,7 @@ func TestAIGatewayRouteController_createDynamicLoadBalancing(t *testing.T) {
 					Kind: ptr.To[gwapiv1.Kind]("Backend"),
 				}},
 			}})
-			require.ErrorContains(t, err, "port mismatch: InferecePool mypool has port 1234, but Backend fqdnport has port 11111")
+			require.ErrorContains(t, err, "port mismatch: InferencePool mypool has port 1234, but Backend fqdnport has port 11111")
 		})
 		t.Run("ok", func(t *testing.T) {
 			require.NoError(t, fakeClient.Create(t.Context(), &egv1a1.Backend{

@@ -33,7 +33,9 @@ func Test_newDynamicLoadBalancer(t *testing.T) {
 				Port:      4444,
 			},
 		},
-		Models: []filterapi.DynamicLoadBalancingModel{},
+		Models:               []filterapi.DynamicLoadBalancingModel{},
+		BackendEndpointType:  filterapi.BackendEndpointIPPort,
+		LoadBalanceAlgorithm: filterapi.LoadBalanceRandom,
 	}
 
 	_dlb, err := newDynamicLoadBalancer(t.Context(), slog.Default(), f, addr)
@@ -79,14 +81,16 @@ func TestDynamicLoadBalancingSelectChatCompletionsEndpoint(t *testing.T) {
 		endpoints: []endpoint{
 			{ipPort: []byte("1.1.1.1:8080"), backend: &filterapi.Backend{Name: "foo"}, hostname: "foo.io"},
 		},
-		models: map[string]filterapi.DynamicLoadBalancingModel{"foo": {}},
+		models:       map[string]filterapi.DynamicLoadBalancingModel{"foo": {}},
+		endpointType: filterapi.BackendEndpointIPPort,
+		lbAlgorithm:  filterapi.LoadBalanceRandom,
 	}
 	t.Run("model name not found", func(t *testing.T) {
-		_, _, err := dlb.SelectChatCompletionsEndpoint("aaaaaaaaaaaaa", nil)
+		_, _, err := dlb.SelectChatCompletionsEndpoint("aaaaaaaaaaaaa", nil, 0)
 		require.ErrorContains(t, err, "model aaaaaaaaaaaaa is not found in the dynamic load balancer")
 	})
 	t.Run("ok", func(t *testing.T) {
-		backend, headers, err := dlb.SelectChatCompletionsEndpoint("foo", nil)
+		backend, headers, err := dlb.SelectChatCompletionsEndpoint("foo", nil, 0)
 		require.NoError(t, err)
 		require.Equal(t, &filterapi.Backend{Name: "foo"}, backend)
 		require.Len(t, headers, 1)

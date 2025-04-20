@@ -138,6 +138,19 @@ const (
 	APISchemaAzureOpenAI APISchemaName = "AzureOpenAI"
 )
 
+type LoadBalanceAlgorithm string
+
+const (
+	LoadBalanceRandom LoadBalanceAlgorithm = "Random"
+)
+
+type BackendEndpointType string
+
+const (
+	BackendEndpointIPPort       BackendEndpointType = "IPPort"
+	BackendEndpointHostnamePort BackendEndpointType = "HostnamePort"
+)
+
 // HeaderMatch is an alias for HTTPHeaderMatch of the Gateway API.
 type HeaderMatch = gwapiv1.HTTPHeaderMatch
 
@@ -182,6 +195,10 @@ type DynamicLoadBalancing struct {
 	Models []DynamicLoadBalancingModel `json:"models,omitempty"`
 	// Backends can be either ip:port or hostname:port.
 	Backends []DynamicLoadBalancingBackend `json:"backends,omitempty"`
+	// LoadBalanceAlgorithm is the algorithm for load balancing with the list of hostnames or ips
+	LoadBalanceAlgorithm LoadBalanceAlgorithm `json:"loadBalanceAlgorithm,omitempty"`
+	// BackendEndpointType is either hostname:port or ip:port
+	BackendEndpointType BackendEndpointType `json:"backendEndpointType"`
 }
 
 // DynamicLoadBalancingModel corresponds to InferenceModel in the Inference Extension.
@@ -198,9 +215,11 @@ type DynamicLoadBalancingModel struct {
 // the IP address level dynamic load balancing.
 type DynamicLoadBalancingBackend struct {
 	Backend
-	// Hostnames is the hostname of this backend. The filter will resolve the hostname to the IP address
-	// asynchronously and use the resolved IP address to route the request.
+	// Hostnames are the hostnames of the pool. For ip:port endpoint type the filter resolves the hostname to the IP address
+	// asynchronously and use the resolved IP address to select and route the request.
 	Hostnames []string `json:"hostNames,omitempty"`
+	// RetryHostNames are the hostnames to retry in order including the primary host
+	RetryHostNames []string `json:"retryHostNames,omitempty"`
 	// IP is the IP address of the endpoint.
 	IPs []string `json:"ips,omitempty"`
 	// Port is the port of the endpoint.

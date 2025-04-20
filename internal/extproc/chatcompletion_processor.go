@@ -47,6 +47,8 @@ func ChatCompletionProcessorFactory(ccm x.ChatCompletionMetrics) ProcessorFactor
 type chatCompletionProcessor struct {
 	logger           *slog.Logger
 	config           *processorConfig
+	model            string
+	requestBody      *openai.ChatCompletionRequest
 	requestHeaders   map[string]string
 	responseHeaders  map[string]string
 	responseEncoding string
@@ -105,7 +107,8 @@ func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBod
 		return nil, fmt.Errorf("failed to parse request body: %w", err)
 	}
 	c.logger.Info("processing request body", "path", c.requestHeaders[":path"], "model", model)
-
+	c.model = model
+	c.requestBody = body
 	c.metrics.SetModel(model)
 	c.requestHeaders[c.config.modelNameHeaderKey] = model
 	b, err := c.config.router.Calculate(c.requestHeaders)
@@ -133,7 +136,10 @@ func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBod
 			// If it's not found, that should be a BUG.
 			panic("BUG: failed to find dynamic load balancer")
 		}
-		b, headers, err = lb.SelectChatCompletionsEndpoint(model, c.metrics)
+		// if retryHosts are set, we select the host name by priority
+		c.logger.Info("selected retry hosts", slog.Int("retry hosts", len(c.dynamicLB.Backends)))
+
+		b, headers, err = lb.SelectChatCompletionsEndpoint(model, c.metrics, 0)
 		if err != nil {
 			return nil, fmt.Errorf("failed to select endpoint: %w", err)
 		}
@@ -196,11 +202,29 @@ func (c *chatCompletionProcessor) ProcessResponseHeaders(ctx context.Context, he
 			c.metrics.RecordRequestCompletion(ctx, false)
 		}
 	}()
-	// TODO: check the status code and use the dynamic load balancing to retry the request per the comment in
-	// 	https://github.com/envoyproxy/ai-gateway/issues/34#issuecomment-2743810926
-	_ = c.dynamicLB
 
 	c.responseHeaders = headersToMap(headers)
+	// TODO: check the status code and use the dynamic load balancing to retry the request per the comment in
+	// 	https://github.com/envoyproxy/ai-gateway/issues/34#issuecomment-2743810926
+	if c.dynamicLB != nil {
+		if lb, ok := c.config.dynamicLoadBalancers[c.dynamicLB]; ok {
+			_, setHeaders, err := lb.SelectChatCompletionsEndpoint(c.model, c.metrics, 1)
+			if err != nil {
+				return nil, fmt.Errorf("failed to select endpoint: %w", err)
+			}
+			return &extprocv3.ProcessingResponse{
+				Response: &extprocv3.ProcessingResponse_RequestHeaders{
+					RequestHeaders: &extprocv3.HeadersResponse{
+						Response: &extprocv3.CommonResponse{
+							HeaderMutation: &extprocv3.HeaderMutation{
+								SetHeaders: setHeaders,
+							},
+						},
+					},
+				},
+			}, nil
+		}
+	}
 	if enc := c.responseHeaders["content-encoding"]; enc != "" {
 		c.responseEncoding = enc
 	}

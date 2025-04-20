@@ -885,15 +885,17 @@ func (c *AIGatewayRouteController) createDynamicLoadBalancing(ctx context.Contex
 				switch {
 				case ep.IP != nil:
 					if ep.IP.Port != pool.Spec.TargetPortNumber {
-						return nil, fmt.Errorf("port mismatch: InferecePool %s has port %d, but Backend %s has port %d",
+						return nil, fmt.Errorf("port mismatch: InferencePool %s has port %d, but Backend %s has port %d",
 							pool.Name, pool.Spec.TargetPortNumber, backend.Name, ep.IP.Port)
 					}
 					dynB.IPs = append(dynB.IPs, ep.IP.Address)
 				case ep.FQDN != nil:
 					if ep.FQDN.Port != pool.Spec.TargetPortNumber {
-						return nil, fmt.Errorf("port mismatch: InferecePool %s has port %d, but Backend %s has port %d",
+						return nil, fmt.Errorf("port mismatch: InferencePool %s has port %d, but Backend %s has port %d",
 							pool.Name, pool.Spec.TargetPortNumber, backend.Name, ep.FQDN.Port)
 					}
+					// TODO insert in order of the priority
+					dynB.RetryHostNames = append(dynB.RetryHostNames, ep.FQDN.Hostname)
 					dynB.Hostnames = append(dynB.Hostnames, ep.FQDN.Hostname)
 				default:
 					return nil, fmt.Errorf("invalid backend endpoint: %v", ep)
