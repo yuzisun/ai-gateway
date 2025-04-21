@@ -14,7 +14,6 @@ import (
 	"log/slog"
 	"math/rand"
 	"os"
-	"strconv"
 	"strings"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
@@ -73,13 +72,6 @@ func newDynamicLoadBalancer(ctx context.Context, logger *slog.Logger, dyn *filte
 		lbAlgorithm:  dyn.LoadBalanceAlgorithm,
 	}
 
-	// TODO: maybe reuse the client for multiple queries.
-	client := dns.Client{}
-	conn, err := client.Dial(dnsServerAddr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial DNS server: %w", err)
-	}
-	defer conn.Close()
 	for _, b := range dyn.Backends {
 		for _, ip := range b.IPs {
 			ret.endpoints = append(ret.endpoints, endpoint{
@@ -89,12 +81,18 @@ func newDynamicLoadBalancer(ctx context.Context, logger *slog.Logger, dyn *filte
 		}
 		for _, hostname := range b.RetryHostNames {
 			ret.retryHosts = append(ret.retryHosts, host{
-				hostname:   hostname,
-				backend:    &b.Backend,
-				portNumber: b.Port,
+				hostPort: []byte(fmt.Sprintf("%s:%d", hostname, b.Port)),
+				backend:  &b.Backend,
 			})
 		}
 		if dyn.BackendEndpointType == filterapi.BackendEndpointIPPort {
+			// TODO: maybe reuse the client for multiple queries.
+			client := dns.Client{}
+			conn, err := client.Dial(dnsServerAddr)
+			if err != nil {
+				return nil, fmt.Errorf("failed to dial DNS server: %w", err)
+			}
+			defer conn.Close()
 			logger.Info("resolving hostnames to IP addresses", slog.String("hostnames", strings.Join(b.Hostnames, ",")))
 			// Resolves all hostnames to IP addresses.
 			for _, hostname := range b.Hostnames {
@@ -156,10 +154,8 @@ type endpoint struct {
 
 // host represents a hostname which belongs to a backend.
 type host struct {
-	// hostname is the hostname used to resolve the IP address. Can be empty if the IP is not resolved from a hostname.
-	hostname string
-	// port is the port number of the host
-	portNumber int32
+	// hostPort is the hostname and port for the backend.
+	hostPort []byte
 	// backend is the backend that this ip:port pair belongs to.
 	backend *filterapi.Backend
 }
@@ -173,11 +169,7 @@ func (dlb *dynamicLoadBalancer) SelectChatCompletionsEndpoint(model string, _ x.
 ) {
 	// if retryHosts are set, we select the host name by priority
 	if len(dlb.retryHosts) > retryAttempt {
-		hostPort := dlb.retryHosts[retryAttempt].hostname + ":"
-		strconv.Itoa(int(dlb.retryHosts[retryAttempt].portNumber))
-		headers = []*corev3.HeaderValueOption{
-			{Header: &corev3.HeaderValue{Key: originalDstHeaderName, RawValue: []byte(hostPort)}},
-		}
+		hostPort := dlb.retryHosts[retryAttempt].hostPort
 		m, ok := dlb.models[model]
 		var modelName string
 		if !ok {
@@ -187,10 +179,10 @@ func (dlb *dynamicLoadBalancer) SelectChatCompletionsEndpoint(model string, _ x.
 		}
 		selected = dlb.retryHosts[retryAttempt].backend
 		if retryAttempt == 0 {
-			dlb.logger.Info("selected primary host", slog.String("hostPort", hostPort),
+			dlb.logger.Info("selected primary host", slog.String("hostPort", string(hostPort)),
 				slog.String("model", modelName))
 		} else {
-			dlb.logger.Info("selected retry host", slog.String("hostPort", hostPort),
+			dlb.logger.Info("selected retry host", slog.String("hostPort", string(hostPort)),
 				slog.String("model", modelName))
 		}
 		return

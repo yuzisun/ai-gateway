@@ -147,7 +147,11 @@ func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBod
 		// TODO: we should make this constant as a part of the filterapi package.
 		//  However, that will likely to change after https://github.com/envoyproxy/envoy/pull/38757
 		// 	so for now, we keep it as an inline string.
-		selectedBackendHeaderValue = "original_destination_cluster"
+		if c.dynamicLB.BackendEndpointType == filterapi.BackendEndpointIPPort {
+			selectedBackendHeaderValue = "original_destination_cluster"
+		} else {
+			selectedBackendHeaderValue = b.Name
+		}
 	}
 
 	c.logger.Info("selected backend", "backend", b.Name, "schema", b.Schema)
@@ -179,7 +183,9 @@ func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBod
 			return nil, fmt.Errorf("failed to do auth request: %w", err)
 		}
 	}
-
+	for _, header := range headerMutation.SetHeaders {
+		c.logger.Info("adding header", "header", header.String())
+	}
 	resp := &extprocv3.ProcessingResponse{
 		Response: &extprocv3.ProcessingResponse_RequestBody{
 			RequestBody: &extprocv3.BodyResponse{
