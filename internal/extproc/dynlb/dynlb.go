@@ -129,6 +129,7 @@ func newDynamicLoadBalancer(ctx context.Context, logger *slog.Logger, dyn *filte
 	}
 	for _, m := range dyn.Models {
 		ret.models[m.Name] = m
+		ret.modelList = append(ret.modelList, m)
 	}
 	return ret, nil
 }
@@ -137,6 +138,7 @@ func newDynamicLoadBalancer(ctx context.Context, logger *slog.Logger, dyn *filte
 type dynamicLoadBalancer struct {
 	logger       *slog.Logger
 	models       map[string]filterapi.DynamicLoadBalancingModel
+	modelList    []filterapi.DynamicLoadBalancingModel
 	endpoints    []endpoint
 	retryHosts   []host
 	endpointType filterapi.BackendEndpointType
@@ -166,30 +168,30 @@ type host struct {
 //
 // TODO: expand x.ChatCompletionMetrics to add getter methods to be able to make a decision based on the metrics.
 // TODO: this might need to return dynamic metadata instead of headers.
-func (dlb *dynamicLoadBalancer) SelectChatCompletionsEndpoint(model string, _ x.ChatCompletionMetrics, retry int) (
+func (dlb *dynamicLoadBalancer) SelectChatCompletionsEndpoint(model string, _ x.ChatCompletionMetrics, retryAttempt int) (
 	selected *filterapi.Backend, headers []*corev3.HeaderValueOption, err error,
 ) {
-	m, ok := dlb.models[model]
-	if !ok {
-		err = fmt.Errorf("model %s is not found in the dynamic load balancer", model)
-		return
-	}
-
-	// TODO: use the filterapi.DynamicLoadBalancingModel to make a decision.
-	_ = m
-
 	// if retryHosts are set, we select the host name by priority
-	if len(dlb.retryHosts) > 0 {
-		hostPort := dlb.retryHosts[retry].hostname +
-			strconv.Itoa(int(dlb.retryHosts[retry].portNumber))
+	if len(dlb.retryHosts) > retryAttempt {
+		hostPort := dlb.retryHosts[retryAttempt].hostname + ":"
+		strconv.Itoa(int(dlb.retryHosts[retryAttempt].portNumber))
 		headers = []*corev3.HeaderValueOption{
 			{Header: &corev3.HeaderValue{Key: originalDstHeaderName, RawValue: []byte(hostPort)}},
 		}
-		selected = dlb.retryHosts[retry].backend
-		if retry == 0 {
-			dlb.logger.Info("selected primary host", slog.String("hostPort", hostPort))
+		m, ok := dlb.models[model]
+		var modelName string
+		if !ok {
+			modelName = dlb.modelList[retryAttempt].Name
 		} else {
-			dlb.logger.Info("selected retry host", slog.String("hostPort", hostPort))
+			modelName = m.Name
+		}
+		selected = dlb.retryHosts[retryAttempt].backend
+		if retryAttempt == 0 {
+			dlb.logger.Info("selected primary host", slog.String("hostPort", hostPort),
+				slog.String("model", modelName))
+		} else {
+			dlb.logger.Info("selected retry host", slog.String("hostPort", hostPort),
+				slog.String("model", modelName))
 		}
 		return
 	}

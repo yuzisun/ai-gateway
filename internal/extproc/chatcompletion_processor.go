@@ -206,7 +206,7 @@ func (c *chatCompletionProcessor) ProcessResponseHeaders(ctx context.Context, he
 	c.responseHeaders = headersToMap(headers)
 	// TODO: check the status code and use the dynamic load balancing to retry the request per the comment in
 	// 	https://github.com/envoyproxy/ai-gateway/issues/34#issuecomment-2743810926
-	if c.dynamicLB != nil {
+	/*if c.dynamicLB != nil {
 		if lb, ok := c.config.dynamicLoadBalancers[c.dynamicLB]; ok {
 			_, setHeaders, err := lb.SelectChatCompletionsEndpoint(c.model, c.metrics, 1)
 			if err != nil {
@@ -224,7 +224,7 @@ func (c *chatCompletionProcessor) ProcessResponseHeaders(ctx context.Context, he
 				},
 			}, nil
 		}
-	}
+	}*/
 	if enc := c.responseHeaders["content-encoding"]; enc != "" {
 		c.responseEncoding = enc
 	}
