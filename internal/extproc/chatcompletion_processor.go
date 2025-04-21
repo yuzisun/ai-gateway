@@ -39,6 +39,7 @@ func ChatCompletionProcessorFactory(ccm x.ChatCompletionMetrics) ProcessorFactor
 			requestHeaders: requestHeaders,
 			logger:         logger,
 			metrics:        ccm,
+			retryAttempt:   0,
 		}, nil
 	}
 }
@@ -49,6 +50,7 @@ type chatCompletionProcessor struct {
 	config           *processorConfig
 	model            string
 	requestBody      *openai.ChatCompletionRequest
+	retryAttempt     int
 	requestHeaders   map[string]string
 	responseHeaders  map[string]string
 	responseEncoding string
@@ -208,25 +210,34 @@ func (c *chatCompletionProcessor) ProcessResponseHeaders(ctx context.Context, he
 	c.responseHeaders = headersToMap(headers)
 	// TODO: check the status code and use the dynamic load balancing to retry the request per the comment in
 	// 	https://github.com/envoyproxy/ai-gateway/issues/34#issuecomment-2743810926
-	/*if c.dynamicLB != nil {
+	if c.dynamicLB != nil {
 		if lb, ok := c.config.dynamicLoadBalancers[c.dynamicLB]; ok {
-			_, setHeaders, err := lb.SelectChatCompletionsEndpoint(c.model, c.metrics, 1)
+			c.retryAttempt = c.retryAttempt + 1
+			respBody, err := lb.SendRetryRequest(ctx, c.requestBody, c.retryAttempt, c.config.selectedBackendHeaderKey)
 			if err != nil {
-				return nil, fmt.Errorf("failed to select endpoint: %w", err)
+				return nil, fmt.Errorf("failed to send retry request: %w", err)
 			}
-			return &extprocv3.ProcessingResponse{
-				Response: &extprocv3.ProcessingResponse_RequestHeaders{
-					RequestHeaders: &extprocv3.HeadersResponse{
+			headerMutation := &extprocv3.HeaderMutation{}
+			bodyMutation := &extprocv3.BodyMutation_Body{}
+			bodyMutation.Body = respBody
+			headerMutation.SetHeaders = append(headerMutation.SetHeaders, &corev3.HeaderValueOption{
+				Header: &corev3.HeaderValue{
+					Key:      "content-length",
+					RawValue: []byte(fmt.Sprintf("%d", len(bodyMutation.Body))),
+				},
+			})
+			res = &extprocv3.ProcessingResponse{
+				Response: &extprocv3.ProcessingResponse_ResponseBody{
+					ResponseBody: &extprocv3.BodyResponse{
 						Response: &extprocv3.CommonResponse{
-							HeaderMutation: &extprocv3.HeaderMutation{
-								SetHeaders: setHeaders,
-							},
+							HeaderMutation: headerMutation,
+							BodyMutation:   &extprocv3.BodyMutation{Mutation: bodyMutation},
 						},
 					},
 				},
-			}, nil
+			}
 		}
-	}*/
+	}
 	if enc := c.responseHeaders["content-encoding"]; enc != "" {
 		c.responseEncoding = enc
 	}

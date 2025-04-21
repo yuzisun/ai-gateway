@@ -8,11 +8,17 @@
 package dynlb
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/envoyproxy/ai-gateway/internal/apischema/openai"
+	"io"
 	"log"
 	"log/slog"
 	"math/rand"
+	"net/http"
 	"os"
 	"strings"
 
@@ -53,6 +59,9 @@ type DynamicLoadBalancer interface {
 	SelectChatCompletionsEndpoint(model string, _ x.ChatCompletionMetrics) (
 		selected *filterapi.Backend, headers []*corev3.HeaderValueOption, err error,
 	)
+
+	// SendRetryRequest selects the host for the retry attempt based on the priority
+	SendRetryRequest(context context.Context, request *openai.ChatCompletionRequest, retryAttempt int, selectedBackendHeader string) ([]byte, error)
 }
 
 // NewDynamicLoadBalancer returns a new implementation of the DynamicLoadBalancer interface.
@@ -194,15 +203,39 @@ func (dlb *dynamicLoadBalancer) SelectChatCompletionsEndpoint(model string, _ x.
 	return
 }
 
-func (dlb *dynamicLoadBalancer) SelectRetryAttemptHost(retryAttempt int) (selected *filterapi.Backend) {
+func (dlb *dynamicLoadBalancer) SendRetryRequest(ctx context.Context, request *openai.ChatCompletionRequest,
+	retryAttempt int, selectedBackendHeader string) ([]byte, error) {
 	// if retryHosts are set, we select the host name by priority
 	if len(dlb.retryHosts) > retryAttempt {
 		hostPort := dlb.retryHosts[retryAttempt].hostPort
 		modelName := dlb.modelList[retryAttempt].Name
-		selected = dlb.retryHosts[retryAttempt].backend
+		selected := dlb.retryHosts[retryAttempt].backend
 
 		dlb.logger.Info("selected retry host", slog.String("hostPort", string(hostPort)),
 			slog.String("model", modelName))
+		reqBytes, err := json.Marshal(request)
+		if err != nil {
+			dlb.logger.Error("failed to marshall the body")
+		}
+		req, err := http.NewRequestWithContext(ctx, "POST", "localhost:8080", bytes.NewBuffer(reqBytes))
+
+		if err != nil {
+			return nil, fmt.Errorf("error creating the retry request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(selectedBackendHeader, selected.Name)
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("error sending the retry request: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return body, fmt.Errorf("failed to send retry request: %s", string(body))
+		}
+		return io.ReadAll(resp.Body)
 	}
-	return
+	return nil, errors.New("failed to select the retry backend")
 }
