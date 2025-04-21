@@ -136,10 +136,8 @@ func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBod
 			// If it's not found, that should be a BUG.
 			panic("BUG: failed to find dynamic load balancer")
 		}
-		// if retryHosts are set, we select the host name by priority
-		c.logger.Info("selected retry hosts", slog.Int("retry hosts", len(c.dynamicLB.Backends)))
 
-		b, headers, err = lb.SelectChatCompletionsEndpoint(model, c.metrics, 0)
+		b, headers, err = lb.SelectChatCompletionsEndpoint(model, c.metrics)
 		if err != nil {
 			return nil, fmt.Errorf("failed to select endpoint: %w", err)
 		}
@@ -149,8 +147,6 @@ func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBod
 		// 	so for now, we keep it as an inline string.
 		if c.dynamicLB.BackendEndpointType == filterapi.BackendEndpointIPPort {
 			selectedBackendHeaderValue = "original_destination_cluster"
-		} else {
-			selectedBackendHeaderValue = b.Name
 		}
 	}
 

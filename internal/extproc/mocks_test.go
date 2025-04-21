@@ -248,7 +248,7 @@ type mockDynamicLB struct {
 }
 
 // SelectChatCompletionsEndpoint implements dynlb.DynamicLoadBalancer.
-func (m *mockDynamicLB) SelectChatCompletionsEndpoint(string, x.ChatCompletionMetrics, int) (
+func (m *mockDynamicLB) SelectChatCompletionsEndpoint(string, x.ChatCompletionMetrics) (
 	selected *filterapi.Backend, headers []*corev3.HeaderValueOption, err error,
 ) {
 	return &filterapi.Backend{Name: m.backedName}, m.headers, nil

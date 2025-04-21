@@ -301,6 +301,12 @@ spec:
                             description: Name is the name of the AIServiceBackend.
                             minLength: 1
                             type: string
+                          retryPriority:
+                            description: |-
+                              RetryPriority is the retry priority of the AIServiceBackend. If the value is 0, that's the primary backend.
+                              If the request fails on the primary backend, it retries on the other backends in the backendRef list in order of
+                              the priority.
+                            type: integer
                           weight:
                             default: 1
                             description: |-

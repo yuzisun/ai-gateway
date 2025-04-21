@@ -319,19 +319,33 @@ func TestChatCompletion_ProcessRequestBody(t *testing.T) {
 			})
 			t.Run("ok", func(t *testing.T) {
 				for _, tc := range []struct {
-					name  string
-					dynlb *mockDynamicLB
+					name                string
+					dynlb               *mockDynamicLB
+					backendEndpointType filterapi.BackendEndpointType
 				}{
 					{name: "no-dynlb"},
-					{name: "dynlb", dynlb: &mockDynamicLB{
-						backedName: "some-backend",
-						headers:    []*corev3.HeaderValueOption{{Header: &corev3.HeaderValue{Key: "foo", Value: "bar"}}},
-					}},
+					{
+						name: "dynlbWithEndpoint",
+						dynlb: &mockDynamicLB{
+							backedName: "some-backend",
+							headers:    []*corev3.HeaderValueOption{{Header: &corev3.HeaderValue{Key: "foo", Value: "bar"}}},
+						},
+						backendEndpointType: filterapi.BackendEndpointIPPort,
+					},
+					{
+						name: "dynlbWithHosts",
+						dynlb: &mockDynamicLB{
+							backedName: "some-backend",
+						},
+						backendEndpointType: filterapi.BackendEndpointHostnamePort,
+					},
 				} {
 					t.Run(tc.name, func(t *testing.T) {
 						someBody := bodyFromModel(t, "some-model")
 						headers := map[string]string{":path": "/foo"}
-						dynLb := &filterapi.DynamicLoadBalancing{}
+						dynLb := &filterapi.DynamicLoadBalancing{
+							BackendEndpointType: tc.backendEndpointType,
+						}
 						rt := mockRouter{
 							t: t, expHeaders: headers, retBackendName: "some-backend",
 							retVersionedAPISchema: filterapi.VersionedAPISchema{Name: "some-schema", Version: "v10.0"},
@@ -373,7 +387,7 @@ func TestChatCompletion_ProcessRequestBody(t *testing.T) {
 
 						// Check the model and backend headers are set in headerMut.
 						hdrs := headerMut.SetHeaders
-						if tc.dynlb != nil {
+						if tc.dynlb != nil && tc.backendEndpointType == filterapi.BackendEndpointIPPort {
 							require.Len(t, hdrs, 3)
 							require.Equal(t, "x-ai-gateway-model-key", hdrs[0].Header.Key)
 							require.Equal(t, "some-model", string(hdrs[0].Header.RawValue))

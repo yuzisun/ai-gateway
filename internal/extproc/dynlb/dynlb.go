@@ -50,7 +50,7 @@ type DynamicLoadBalancer interface {
 	// The selection result is reflected in the headers to be added to the request, returned as a slice of HeaderValueOption.
 	//
 	// This also returns the selected backend filterapi.Backend to perform per-Backend level operations such rate limiting.
-	SelectChatCompletionsEndpoint(model string, _ x.ChatCompletionMetrics, retry int) (
+	SelectChatCompletionsEndpoint(model string, _ x.ChatCompletionMetrics) (
 		selected *filterapi.Backend, headers []*corev3.HeaderValueOption, err error,
 	)
 }
@@ -164,29 +164,16 @@ type host struct {
 //
 // TODO: expand x.ChatCompletionMetrics to add getter methods to be able to make a decision based on the metrics.
 // TODO: this might need to return dynamic metadata instead of headers.
-func (dlb *dynamicLoadBalancer) SelectChatCompletionsEndpoint(model string, _ x.ChatCompletionMetrics, retryAttempt int) (
+func (dlb *dynamicLoadBalancer) SelectChatCompletionsEndpoint(model string, _ x.ChatCompletionMetrics) (
 	selected *filterapi.Backend, headers []*corev3.HeaderValueOption, err error,
 ) {
-	// if retryHosts are set, we select the host name by priority
-	if len(dlb.retryHosts) > retryAttempt {
-		hostPort := dlb.retryHosts[retryAttempt].hostPort
-		m, ok := dlb.models[model]
-		var modelName string
-		if !ok {
-			modelName = dlb.modelList[retryAttempt].Name
-		} else {
-			modelName = m.Name
-		}
-		selected = dlb.retryHosts[retryAttempt].backend
-		if retryAttempt == 0 {
-			dlb.logger.Info("selected primary host", slog.String("hostPort", string(hostPort)),
-				slog.String("model", modelName))
-		} else {
-			dlb.logger.Info("selected retry host", slog.String("hostPort", string(hostPort)),
-				slog.String("model", modelName))
-		}
+	m, ok := dlb.models[model]
+	if !ok {
+		err = fmt.Errorf("model %s is not found in the dynamic load balancer", model)
 		return
 	}
+	// TODO: use the filterapi.DynamicLoadBalancingModel to make a decision.
+	_ = m
 	if len(dlb.endpoints) > 0 && dlb.lbAlgorithm == filterapi.LoadBalanceRandom {
 		// Pick random backend for now. TODO: use the metrics to make a decision as commented above.
 		// TODO: Use non blocking rand (if it's really random).
@@ -203,6 +190,19 @@ func (dlb *dynamicLoadBalancer) SelectChatCompletionsEndpoint(model string, _ x.
 			// 	Currently, EG API doesn't support allow us to set mutation_rules.
 			_ = hn
 		}
+	}
+	return
+}
+
+func (dlb *dynamicLoadBalancer) SelectRetryAttemptHost(retryAttempt int) (selected *filterapi.Backend) {
+	// if retryHosts are set, we select the host name by priority
+	if len(dlb.retryHosts) > retryAttempt {
+		hostPort := dlb.retryHosts[retryAttempt].hostPort
+		modelName := dlb.modelList[retryAttempt].Name
+		selected = dlb.retryHosts[retryAttempt].backend
+
+		dlb.logger.Info("selected retry host", slog.String("hostPort", string(hostPort)),
+			slog.String("model", modelName))
 	}
 	return
 }

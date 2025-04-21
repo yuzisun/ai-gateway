@@ -453,6 +453,11 @@ AIGatewayRouteRuleBackendRef is a reference to a backend with a weight.
   required="false"
   defaultValue="1"
   description="Weight is the weight of the AIServiceBackend. This is exactly the same as the weight in<br />the BackendRef in the Gateway API. See for the details:<br />https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io%2fv1.BackendRef<br />Default is 1."
+/><ApiField
+  name="retryPriority"
+  type="integer"
+  required="true"
+  description="RetryPriority is the retry priority of the AIServiceBackend. If the value is 0, that's the primary backend.<br />If the request fails on the primary backend, it retries on the other backends in the backendRef list in order of<br />the priority."
 />
 
 
