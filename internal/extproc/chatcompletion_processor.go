@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extprocv3http "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
@@ -39,7 +40,6 @@ func ChatCompletionProcessorFactory(ccm x.ChatCompletionMetrics) ProcessorFactor
 			requestHeaders: requestHeaders,
 			logger:         logger,
 			metrics:        ccm,
-			retryAttempt:   0,
 		}, nil
 	}
 }
@@ -49,8 +49,7 @@ type chatCompletionProcessor struct {
 	logger           *slog.Logger
 	config           *processorConfig
 	model            string
-	requestBody      *openai.ChatCompletionRequest
-	retryAttempt     int
+	requestCache     sync.Map
 	requestHeaders   map[string]string
 	responseHeaders  map[string]string
 	responseEncoding string
@@ -110,9 +109,15 @@ func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBod
 	}
 	c.logger.Info("processing request body", "path", c.requestHeaders[":path"], "model", model)
 	c.model = model
-	c.requestBody = body
 	c.metrics.SetModel(model)
-	c.requestHeaders[c.config.modelNameHeaderKey] = model
+	if _, ok := c.requestHeaders["x-request-attempt"]; ok {
+		// mutate the selected model for retry
+		if retryModel, exist := c.requestHeaders["x-ai-eg-model"]; exist {
+			c.model = retryModel
+			body.Model = c.model
+		}
+	}
+	c.requestHeaders[c.config.modelNameHeaderKey] = c.model
 	b, err := c.config.router.Calculate(c.requestHeaders)
 	if err != nil {
 		if errors.Is(err, x.ErrNoMatchingRule) {
@@ -138,7 +143,6 @@ func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBod
 			// If it's not found, that should be a BUG.
 			panic("BUG: failed to find dynamic load balancer")
 		}
-
 		b, headers, err = lb.SelectChatCompletionsEndpoint(model, c.metrics)
 		if err != nil {
 			return nil, fmt.Errorf("failed to select endpoint: %w", err)
@@ -200,7 +204,7 @@ func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBod
 }
 
 // ProcessResponseHeaders implements [Processor.ProcessResponseHeaders].
-func (c *chatCompletionProcessor) ProcessResponseHeaders(ctx context.Context, headers *corev3.HeaderMap) (res *extprocv3.ProcessingResponse, err error) {
+func (c *chatCompletionProcessor) ProcessResponseHeaders(ctx context.Context, headers *corev3.HeaderMap, requestBody []byte) (res *extprocv3.ProcessingResponse, err error) {
 	defer func() {
 		if err != nil {
 			c.metrics.RecordRequestCompletion(ctx, false)
@@ -208,36 +212,44 @@ func (c *chatCompletionProcessor) ProcessResponseHeaders(ctx context.Context, he
 	}()
 
 	c.responseHeaders = headersToMap(headers)
-	// TODO: check the status code and use the dynamic load balancing to retry the request per the comment in
-	// 	https://github.com/envoyproxy/ai-gateway/issues/34#issuecomment-2743810926
-	if c.dynamicLB != nil {
-		if lb, ok := c.config.dynamicLoadBalancers[c.dynamicLB]; ok {
-			c.retryAttempt = c.retryAttempt + 1
-			respBody, err := lb.SendRetryRequest(ctx, c.requestBody, c.retryAttempt, c.config.selectedBackendHeaderKey)
-			if err != nil {
-				return nil, fmt.Errorf("failed to send retry request: %w", err)
-			}
-			headerMutation := &extprocv3.HeaderMutation{}
-			bodyMutation := &extprocv3.BodyMutation_Body{}
-			bodyMutation.Body = respBody
-			headerMutation.SetHeaders = append(headerMutation.SetHeaders, &corev3.HeaderValueOption{
-				Header: &corev3.HeaderValue{
-					Key:      "content-length",
-					RawValue: []byte(fmt.Sprintf("%d", len(bodyMutation.Body))),
-				},
-			})
-			res = &extprocv3.ProcessingResponse{
-				Response: &extprocv3.ProcessingResponse_ResponseBody{
-					ResponseBody: &extprocv3.BodyResponse{
-						Response: &extprocv3.CommonResponse{
-							HeaderMutation: headerMutation,
-							BodyMutation:   &extprocv3.BodyMutation{Mutation: bodyMutation},
-						},
+	for key, value := range c.responseHeaders {
+		c.logger.Info("adding header", "header", key, "value", value)
+	}
+	// check the status code and use the dynamic load balancing to retry the request
+	// TODO make the retry configurable
+	if c.dynamicLB != nil && c.responseHeaders[":status"] == "500" {
+		c.logger.Info("retrying the request!!!!")
+		lb, ok := c.config.dynamicLoadBalancers[c.dynamicLB]
+		if !ok {
+			// If it's not found, that should be a BUG.
+			panic("BUG: failed to find dynamic load balancer")
+		}
+		retryAttempts := 0
+		respBody, retryErr := lb.SendRetryRequest(ctx, requestBody, retryAttempts, c.config.selectedBackendHeaderKey)
+		if retryErr != nil {
+			return nil, fmt.Errorf("failed to send retry request: %w", retryErr)
+		}
+		headerMutation := &extprocv3.HeaderMutation{}
+		bodyMutation := &extprocv3.BodyMutation_Body{}
+		bodyMutation.Body = respBody
+		headerMutation.SetHeaders = append(headerMutation.SetHeaders, &corev3.HeaderValueOption{
+			Header: &corev3.HeaderValue{
+				Key:      "content-length",
+				RawValue: []byte(fmt.Sprintf("%d", len(bodyMutation.Body))),
+			},
+		})
+		return &extprocv3.ProcessingResponse{
+			Response: &extprocv3.ProcessingResponse_ResponseBody{
+				ResponseBody: &extprocv3.BodyResponse{
+					Response: &extprocv3.CommonResponse{
+						HeaderMutation: headerMutation,
+						BodyMutation:   &extprocv3.BodyMutation{Mutation: bodyMutation},
 					},
 				},
-			}
-		}
+			},
+		}, nil
 	}
+
 	if enc := c.responseHeaders["content-encoding"]; enc != "" {
 		c.responseEncoding = enc
 	}

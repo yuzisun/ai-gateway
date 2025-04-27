@@ -10,10 +10,7 @@ package dynlb
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"github.com/envoyproxy/ai-gateway/internal/apischema/openai"
 	"io"
 	"log"
 	"log/slog"
@@ -61,7 +58,7 @@ type DynamicLoadBalancer interface {
 	)
 
 	// SendRetryRequest selects the host for the retry attempt based on the priority
-	SendRetryRequest(context context.Context, request *openai.ChatCompletionRequest, retryAttempt int, selectedBackendHeader string) ([]byte, error)
+	SendRetryRequest(context context.Context, request []byte, retryAttempt int, selectedBackendHeader string) ([]byte, error)
 }
 
 // NewDynamicLoadBalancer returns a new implementation of the DynamicLoadBalancer interface.
@@ -74,6 +71,12 @@ func NewDynamicLoadBalancer(ctx context.Context, logger *slog.Logger, dyn *filte
 
 // dynamicLoadBalancer implements NewDynamicLoadBalancer but decoupled for testing.
 func newDynamicLoadBalancer(ctx context.Context, logger *slog.Logger, dyn *filterapi.DynamicLoadBalancing, dnsServerAddr string) (DynamicLoadBalancer, error) {
+	if dyn.LoadBalanceAlgorithm == "" {
+		dyn.LoadBalanceAlgorithm = filterapi.LoadBalanceRandom
+	}
+	if dyn.BackendEndpointType == "" {
+		dyn.BackendEndpointType = filterapi.BackendEndpointHostnamePort
+	}
 	ret := &dynamicLoadBalancer{
 		logger:       logger,
 		models:       make(map[string]filterapi.DynamicLoadBalancingModel, len(dyn.Models)),
@@ -82,19 +85,13 @@ func newDynamicLoadBalancer(ctx context.Context, logger *slog.Logger, dyn *filte
 	}
 
 	for _, b := range dyn.Backends {
-		for _, ip := range b.IPs {
-			ret.endpoints = append(ret.endpoints, endpoint{
-				ipPort:  []byte(fmt.Sprintf("%s:%d", ip, b.Port)),
-				backend: &b.Backend,
-			})
-		}
-		for _, hostname := range b.RetryHostNames {
-			ret.retryHosts = append(ret.retryHosts, host{
-				hostPort: []byte(fmt.Sprintf("%s:%d", hostname, b.Port)),
-				backend:  &b.Backend,
-			})
-		}
 		if dyn.BackendEndpointType == filterapi.BackendEndpointIPPort {
+			for _, ip := range b.IPs {
+				ret.endpoints = append(ret.endpoints, endpoint{
+					ipPort:  []byte(fmt.Sprintf("%s:%d", ip, b.Port)),
+					backend: &b.Backend,
+				})
+			}
 			// TODO: maybe reuse the client for multiple queries.
 			client := dns.Client{}
 			conn, err := client.Dial(dnsServerAddr)
@@ -131,6 +128,19 @@ func newDynamicLoadBalancer(ctx context.Context, logger *slog.Logger, dyn *filte
 						})
 					}
 				}
+			}
+		} else {
+			for _, hostname := range b.Hostnames {
+				ret.endpoints = append(ret.endpoints, endpoint{
+					hostname: hostname,
+					backend:  &b.Backend,
+				})
+			}
+			for _, hostname := range b.RetryHostNames {
+				ret.retryHosts = append(ret.retryHosts, host{
+					hostPort: []byte(fmt.Sprintf("%s:%d", hostname, b.Port)),
+					backend:  &b.Backend,
+				})
 			}
 		}
 	}
@@ -187,23 +197,29 @@ func (dlb *dynamicLoadBalancer) SelectChatCompletionsEndpoint(model string, _ x.
 		// Pick random backend for now. TODO: use the metrics to make a decision as commented above.
 		// TODO: Use non blocking rand (if it's really random).
 		ep := dlb.endpoints[rand.Intn(len(dlb.endpoints))] // nolint:gosec
-		dlb.logger.Info("selected endpoint", slog.String("endpoint", string(ep.ipPort)))
-
+		if dlb.endpointType != filterapi.BackendEndpointIPPort {
+			dlb.logger.Info("selected host", slog.String("host", ep.hostname))
+		} else {
+			dlb.logger.Info("selected endpoint", slog.String("endpoint", string(ep.ipPort)))
+			headers = []*corev3.HeaderValueOption{
+				{Header: &corev3.HeaderValue{Key: originalDstHeaderName, RawValue: ep.ipPort}},
+			}
+			if hn := ep.hostname; hn != "" {
+				// TODO: Set host header if the IP is resolved from a hostname. Without this, it is likely that we cannot
+				// 	route the requests to external services that reject requests with the mismatching host header.
+				// 	Currently, EG API doesn't support allow us to set mutation_rules.
+				_ = hn
+			}
+		}
 		selected = ep.backend
-		headers = []*corev3.HeaderValueOption{
-			{Header: &corev3.HeaderValue{Key: originalDstHeaderName, RawValue: ep.ipPort}},
-		}
-		if hn := ep.hostname; hn != "" {
-			// TODO: Set host header if the IP is resolved from a hostname. Without this, it is likely that we cannot
-			// 	route the requests to external services that reject requests with the mismatching host header.
-			// 	Currently, EG API doesn't support allow us to set mutation_rules.
-			_ = hn
-		}
+	} else {
+		err = fmt.Errorf("unsupported lb algorithm %s", dlb.lbAlgorithm)
+		return
 	}
 	return
 }
 
-func (dlb *dynamicLoadBalancer) SendRetryRequest(ctx context.Context, request *openai.ChatCompletionRequest,
+func (dlb *dynamicLoadBalancer) SendRetryRequest(ctx context.Context, request []byte,
 	retryAttempt int, selectedBackendHeader string) ([]byte, error) {
 	// if retryHosts are set, we select the host name by priority
 	if len(dlb.retryHosts) > retryAttempt {
@@ -213,16 +229,15 @@ func (dlb *dynamicLoadBalancer) SendRetryRequest(ctx context.Context, request *o
 
 		dlb.logger.Info("selected retry host", slog.String("hostPort", string(hostPort)),
 			slog.String("model", modelName))
-		reqBytes, err := json.Marshal(request)
-		if err != nil {
-			dlb.logger.Error("failed to marshall the body")
-		}
-		req, err := http.NewRequestWithContext(ctx, "POST", "localhost:8080", bytes.NewBuffer(reqBytes))
+		req, err := http.NewRequestWithContext(ctx, "POST", "http://envoy-default-envoy-ai-gateway-basic.envoy-gateway-system.svc.cluster.local/v1/chat/completions",
+			bytes.NewBuffer(request))
 
 		if err != nil {
 			return nil, fmt.Errorf("error creating the retry request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-retry-attempt", fmt.Sprintf("%d", retryAttempt))
+		req.Header.Set("x-ai-eg-model", modelName)
 		req.Header.Set(selectedBackendHeader, selected.Name)
 
 		client := &http.Client{}
@@ -233,9 +248,9 @@ func (dlb *dynamicLoadBalancer) SendRetryRequest(ctx context.Context, request *o
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			return body, fmt.Errorf("failed to send retry request: %s", string(body))
+			return body, fmt.Errorf("failed to send retry request with status code: %d", resp.StatusCode)
 		}
 		return io.ReadAll(resp.Body)
 	}
-	return nil, errors.New("failed to select the retry backend")
+	return nil, fmt.Errorf("exhausted the number of retries %d", retryAttempt)
 }

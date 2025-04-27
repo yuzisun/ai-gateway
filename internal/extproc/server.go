@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
@@ -36,11 +37,16 @@ var (
 	sensitiveHeaderKeys          = []string{"authorization"}
 )
 
+type cacheEntry struct {
+	Body []byte
+}
+
 // Server implements the external processor server.
 type Server struct {
-	logger     *slog.Logger
-	config     *processorConfig
-	processors map[string]ProcessorFactory
+	logger       *slog.Logger
+	config       *processorConfig
+	processors   map[string]ProcessorFactory
+	requestCache sync.Map // map[string]cacheEntry
 }
 
 // NewServer creates a new external processor server.
@@ -168,7 +174,6 @@ func (s *Server) Process(stream extprocv3.ExternalProcessor_ProcessServer) error
 			s.logger.Error("cannot receive stream request", slog.String("error", err.Error()))
 			return status.Errorf(codes.Unknown, "cannot receive stream request: %v", err)
 		}
-
 		// If we're processing the request headers, read the :path header to instantiate the
 		// right processor.
 		// Note that `req.GetRequestHeaders()` will only return non-nil if the request is
@@ -181,7 +186,6 @@ func (s *Server) Process(stream extprocv3.ExternalProcessor_ProcessServer) error
 				return status.Error(codes.NotFound, err.Error())
 			}
 		}
-
 		// At this point, p is guaranteed to be a valid processor either from the concrete processor or the passThroughProcessor.
 
 		resp, err := s.processMsg(ctx, p, req)
@@ -199,7 +203,7 @@ func (s *Server) Process(stream extprocv3.ExternalProcessor_ProcessServer) error
 func (s *Server) processMsg(ctx context.Context, p Processor, req *extprocv3.ProcessingRequest) (*extprocv3.ProcessingResponse, error) {
 	switch value := req.Request.(type) {
 	case *extprocv3.ProcessingRequest_RequestHeaders:
-		requestHdrs := req.GetRequestHeaders().Headers
+		requestHdrs := req.GetRequestHeaders().GetHeaders()
 		// If DEBUG log level is enabled, filter sensitive headers before logging.
 		if s.logger.Enabled(ctx, slog.LevelDebug) {
 			filteredHdrs := filterSensitiveHeadersForLogging(requestHdrs, sensitiveHeaderKeys)
@@ -213,6 +217,12 @@ func (s *Server) processMsg(ctx context.Context, p Processor, req *extprocv3.Pro
 		return resp, nil
 	case *extprocv3.ProcessingRequest_RequestBody:
 		s.logger.Debug("request body processing", slog.Any("request", req))
+		requestHdrs := req.GetRequestHeaders().GetHeaders()
+		for _, header := range requestHdrs.GetHeaders() {
+			if header.GetKey() == "x-request-id" {
+				s.requestCache.Store(header.Value, cacheEntry{Body: value.RequestBody.GetBody()})
+			}
+		}
 		resp, err := p.ProcessRequestBody(ctx, value.RequestBody)
 		// If DEBUG log level is enabled, filter sensitive body before logging.
 		if s.logger.Enabled(ctx, slog.LevelDebug) {
@@ -226,7 +236,19 @@ func (s *Server) processMsg(ctx context.Context, p Processor, req *extprocv3.Pro
 	case *extprocv3.ProcessingRequest_ResponseHeaders:
 		responseHdrs := req.GetResponseHeaders().Headers
 		s.logger.Debug("response headers processing", slog.Any("response_headers", responseHdrs))
-		resp, err := p.ProcessResponseHeaders(ctx, responseHdrs)
+		var requestBody []byte
+		requestHdrs := req.GetRequestHeaders().GetHeaders()
+		for _, header := range requestHdrs.GetHeaders() {
+			if header.GetKey() == "x-request-id" {
+				val, ok := s.requestCache.Load(header.Value)
+				if !ok {
+					s.logger.Error("failed to find the request", slog.Any("requestId", header.GetKey()))
+				} else {
+					requestBody = val.([]byte)
+				}
+			}
+		}
+		resp, err := p.ProcessResponseHeaders(ctx, responseHdrs, requestBody)
 		if err != nil {
 			return nil, fmt.Errorf("cannot process response headers: %w", err)
 		}

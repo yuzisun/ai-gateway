@@ -83,7 +83,7 @@ func (m *modelsProcessor) ProcessRequestBody(context.Context, *extprocv3.HttpBod
 }
 
 // ProcessResponseHeaders implements [Processor.ProcessResponseHeaders].
-func (m *modelsProcessor) ProcessResponseHeaders(context.Context, *corev3.HeaderMap) (*extprocv3.ProcessingResponse, error) {
+func (m *modelsProcessor) ProcessResponseHeaders(context.Context, *corev3.HeaderMap, []byte) (*extprocv3.ProcessingResponse, error) {
 	return nil, fmt.Errorf("%w: ProcessResponseHeaders", errUnexpectedCall)
 }
 
