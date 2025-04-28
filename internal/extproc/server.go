@@ -13,7 +13,6 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
-	"sync"
 	"unicode/utf8"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
@@ -43,10 +42,9 @@ type cacheEntry struct {
 
 // Server implements the external processor server.
 type Server struct {
-	logger       *slog.Logger
-	config       *processorConfig
-	processors   map[string]ProcessorFactory
-	requestCache sync.Map // map[string]cacheEntry
+	logger     *slog.Logger
+	config     *processorConfig
+	processors map[string]ProcessorFactory
 }
 
 // NewServer creates a new external processor server.
@@ -202,7 +200,7 @@ func (s *Server) Process(stream extprocv3.ExternalProcessor_ProcessServer) error
 func (s *Server) processMsg(ctx context.Context, p Processor, req *extprocv3.ProcessingRequest) (*extprocv3.ProcessingResponse, error) {
 	switch value := req.Request.(type) {
 	case *extprocv3.ProcessingRequest_RequestHeaders:
-		requestHdrs := req.GetRequestHeaders().GetHeaders()
+		requestHdrs := req.GetRequestHeaders().Headers
 		// If DEBUG log level is enabled, filter sensitive headers before logging.
 		if s.logger.Enabled(ctx, slog.LevelDebug) {
 			filteredHdrs := filterSensitiveHeadersForLogging(requestHdrs, sensitiveHeaderKeys)
@@ -216,12 +214,6 @@ func (s *Server) processMsg(ctx context.Context, p Processor, req *extprocv3.Pro
 		return resp, nil
 	case *extprocv3.ProcessingRequest_RequestBody:
 		s.logger.Debug("request body processing", slog.Any("request", req))
-		requestHdrs := req.GetRequestHeaders().GetHeaders()
-		for _, header := range requestHdrs.GetHeaders() {
-			if header.GetKey() == "x-request-id" {
-				s.requestCache.Store(header.Value, cacheEntry{Body: value.RequestBody.GetBody()})
-			}
-		}
 		resp, err := p.ProcessRequestBody(ctx, value.RequestBody)
 		// If DEBUG log level is enabled, filter sensitive body before logging.
 		if s.logger.Enabled(ctx, slog.LevelDebug) {

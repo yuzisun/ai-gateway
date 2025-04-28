@@ -191,9 +191,6 @@ func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBod
 			return nil, fmt.Errorf("failed to do auth request: %w", err)
 		}
 	}
-	for _, header := range headerMutation.SetHeaders {
-		c.logger.Info("adding header", "header", header.String())
-	}
 	resp := &extprocv3.ProcessingResponse{
 		Response: &extprocv3.ProcessingResponse_RequestBody{
 			RequestBody: &extprocv3.BodyResponse{
@@ -218,9 +215,6 @@ func (c *chatCompletionProcessor) ProcessResponseHeaders(ctx context.Context, he
 	}()
 
 	c.responseHeaders = headersToMap(headers)
-	for key, value := range c.responseHeaders {
-		c.logger.Info("found response header", "header", key, "value", value)
-	}
 	// check the status code and use the dynamic load balancing to retry the request
 	// TODO make the retry configurable
 	if c.dynamicLB != nil && c.responseHeaders[":status"] == "503" {
