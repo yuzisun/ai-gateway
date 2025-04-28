@@ -187,7 +187,6 @@ func (s *Server) Process(stream extprocv3.ExternalProcessor_ProcessServer) error
 			}
 		}
 		// At this point, p is guaranteed to be a valid processor either from the concrete processor or the passThroughProcessor.
-
 		resp, err := s.processMsg(ctx, p, req)
 		if err != nil {
 			s.logger.Error("error processing request message", slog.String("error", err.Error()))
@@ -236,19 +235,7 @@ func (s *Server) processMsg(ctx context.Context, p Processor, req *extprocv3.Pro
 	case *extprocv3.ProcessingRequest_ResponseHeaders:
 		responseHdrs := req.GetResponseHeaders().Headers
 		s.logger.Debug("response headers processing", slog.Any("response_headers", responseHdrs))
-		var requestBody []byte
-		requestHdrs := req.GetRequestHeaders().GetHeaders()
-		for _, header := range requestHdrs.GetHeaders() {
-			if header.GetKey() == "x-request-id" {
-				val, ok := s.requestCache.Load(header.Value)
-				if !ok {
-					s.logger.Error("failed to find the request", slog.Any("requestId", header.GetKey()))
-				} else {
-					requestBody = val.([]byte)
-				}
-			}
-		}
-		resp, err := p.ProcessResponseHeaders(ctx, responseHdrs, requestBody)
+		resp, err := p.ProcessResponseHeaders(ctx, responseHdrs)
 		if err != nil {
 			return nil, fmt.Errorf("cannot process response headers: %w", err)
 		}

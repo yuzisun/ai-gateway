@@ -50,7 +50,7 @@ type Processor interface {
 	// ProcessRequestBody processes the request body message.
 	ProcessRequestBody(context.Context, *extprocv3.HttpBody) (*extprocv3.ProcessingResponse, error)
 	// ProcessResponseHeaders processes the response headers message.
-	ProcessResponseHeaders(context.Context, *corev3.HeaderMap, []byte) (*extprocv3.ProcessingResponse, error)
+	ProcessResponseHeaders(context.Context, *corev3.HeaderMap) (*extprocv3.ProcessingResponse, error)
 	// ProcessResponseBody processes the response body message.
 	ProcessResponseBody(context.Context, *extprocv3.HttpBody) (*extprocv3.ProcessingResponse, error)
 }
@@ -69,7 +69,7 @@ func (p passThroughProcessor) ProcessRequestBody(context.Context, *extprocv3.Htt
 }
 
 // ProcessResponseHeaders implements [Processor.ProcessResponseHeaders].
-func (p passThroughProcessor) ProcessResponseHeaders(context.Context, *corev3.HeaderMap, []byte) (*extprocv3.ProcessingResponse, error) {
+func (p passThroughProcessor) ProcessResponseHeaders(context.Context, *corev3.HeaderMap) (*extprocv3.ProcessingResponse, error) {
 	return &extprocv3.ProcessingResponse{Response: &extprocv3.ProcessingResponse_ResponseHeaders{}}, nil
 }
 

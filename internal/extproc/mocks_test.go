@@ -254,7 +254,7 @@ func (m *mockDynamicLB) SelectChatCompletionsEndpoint(string, x.ChatCompletionMe
 	return &filterapi.Backend{Name: m.backedName}, m.headers, nil
 }
 
-func (m *mockDynamicLB) SendRetryRequest(context context.Context, request *openai.ChatCompletionRequest,
+func (m *mockDynamicLB) SendRetryRequest(context context.Context, request []byte,
 	retryAttempt int, selectedBackendHeader string) ([]byte, error) {
 	return nil, nil
 }

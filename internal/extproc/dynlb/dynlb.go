@@ -238,6 +238,7 @@ func (dlb *dynamicLoadBalancer) SendRetryRequest(ctx context.Context, request []
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("x-retry-attempt", fmt.Sprintf("%d", retryAttempt))
 		req.Header.Set("x-ai-eg-model", modelName)
+		req.Header.Set("content-length", fmt.Sprintf("%d", len(request)))
 		req.Header.Set(selectedBackendHeader, selected.Name)
 
 		client := &http.Client{}

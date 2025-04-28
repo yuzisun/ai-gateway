@@ -51,6 +51,7 @@ type chatCompletionProcessor struct {
 	model            string
 	requestCache     sync.Map
 	requestHeaders   map[string]string
+	requestBody      []byte
 	responseHeaders  map[string]string
 	responseEncoding string
 	translator       translator.OpenAIChatCompletionTranslator
@@ -103,6 +104,7 @@ func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBod
 			c.metrics.RecordRequestCompletion(ctx, false)
 		}
 	}()
+	c.requestBody = rawBody.Body
 	model, body, err := parseOpenAIChatCompletionBody(rawBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse request body: %w", err)
@@ -137,6 +139,7 @@ func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBod
 	var headers []*corev3.HeaderValueOption
 	c.dynamicLB = b.DynamicLoadBalancing
 	selectedBackendHeaderValue := b.Name
+	selectedBackend := b
 	if c.dynamicLB != nil {
 		lb, ok := c.config.dynamicLoadBalancers[c.dynamicLB]
 		if !ok {
@@ -153,13 +156,16 @@ func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBod
 		// 	so for now, we keep it as an inline string.
 		if c.dynamicLB.BackendEndpointType == filterapi.BackendEndpointIPPort {
 			selectedBackendHeaderValue = "original_destination_cluster"
+		} else {
+			selectedBackendHeaderValue = b.Name
+			selectedBackend = b
 		}
 	}
 
-	c.logger.Info("selected backend", "backend", b.Name, "schema", b.Schema)
-	c.metrics.SetBackend(b)
+	c.logger.Info("selected backend", "backend", selectedBackend.Name, "schema", selectedBackend.Schema)
+	c.metrics.SetBackend(selectedBackend)
 
-	if err = c.selectTranslator(b.Schema); err != nil {
+	if err = c.selectTranslator(selectedBackend.Schema); err != nil {
 		return nil, fmt.Errorf("failed to select translator: %w", err)
 	}
 
@@ -204,7 +210,7 @@ func (c *chatCompletionProcessor) ProcessRequestBody(ctx context.Context, rawBod
 }
 
 // ProcessResponseHeaders implements [Processor.ProcessResponseHeaders].
-func (c *chatCompletionProcessor) ProcessResponseHeaders(ctx context.Context, headers *corev3.HeaderMap, requestBody []byte) (res *extprocv3.ProcessingResponse, err error) {
+func (c *chatCompletionProcessor) ProcessResponseHeaders(ctx context.Context, headers *corev3.HeaderMap) (res *extprocv3.ProcessingResponse, err error) {
 	defer func() {
 		if err != nil {
 			c.metrics.RecordRequestCompletion(ctx, false)
@@ -213,11 +219,11 @@ func (c *chatCompletionProcessor) ProcessResponseHeaders(ctx context.Context, he
 
 	c.responseHeaders = headersToMap(headers)
 	for key, value := range c.responseHeaders {
-		c.logger.Info("adding header", "header", key, "value", value)
+		c.logger.Info("found response header", "header", key, "value", value)
 	}
 	// check the status code and use the dynamic load balancing to retry the request
 	// TODO make the retry configurable
-	if c.dynamicLB != nil && c.responseHeaders[":status"] == "500" {
+	if c.dynamicLB != nil && c.responseHeaders[":status"] == "503" {
 		c.logger.Info("retrying the request!!!!")
 		lb, ok := c.config.dynamicLoadBalancers[c.dynamicLB]
 		if !ok {
@@ -225,7 +231,7 @@ func (c *chatCompletionProcessor) ProcessResponseHeaders(ctx context.Context, he
 			panic("BUG: failed to find dynamic load balancer")
 		}
 		retryAttempts := 0
-		respBody, retryErr := lb.SendRetryRequest(ctx, requestBody, retryAttempts, c.config.selectedBackendHeaderKey)
+		respBody, retryErr := lb.SendRetryRequest(ctx, c.requestBody, retryAttempts, c.config.selectedBackendHeaderKey)
 		if retryErr != nil {
 			return nil, fmt.Errorf("failed to send retry request: %w", retryErr)
 		}
