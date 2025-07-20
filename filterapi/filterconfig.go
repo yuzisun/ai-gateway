@@ -104,6 +104,8 @@ type APISchemaName string
 const (
 	// APISchemaOpenAI represents the standard OpenAI API schema.
 	APISchemaOpenAI APISchemaName = "OpenAI"
+	// APISchemaAnthropic represents the anthropic schema.
+	APISchemaAnthropic APISchemaName = "OpenAI"
 	// APISchemaAWSBedrock represents the AWS Bedrock API schema.
 	APISchemaAWSBedrock APISchemaName = "AWSBedrock"
 	// APISchemaAzureOpenAI represents the Azure OpenAI API schema.
@@ -114,6 +116,9 @@ const (
 	// APISchemaGCPAnthropic represents the Google Cloud Anthropic API schema.
 	// Used for Claude models hosted on Google Cloud Vertex AI.
 	APISchemaGCPAnthropic APISchemaName = "GCPAnthropic"
+	// APISchemaAWSBedrockAnthropic represents the AWS Bedrock Anthropic API schema.
+	// Used for Claude models hosted on AWS Bedrock.
+	APISchemaAWSBedrockAnthropic APISchemaName = "AWSBedrockAnthropic"
 )
 
 // RouteRuleName is the name of the route rule.

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 
@@ -76,6 +77,42 @@ func setContentLength(headers *extprocv3.HeaderMutation, body []byte) {
 	})
 }
 
+// AnthropicMessageTranslator translates the request and response messages between the client and the backend API schemas
+// for /v1/message endpoint of Anthropic.
+//
+// This is created per request and is not thread-safe.
+type AnthropicMessageTranslator interface {
+	// RequestBody translates the request body.
+	// 	- `raw` is the raw request body.
+	// 	- `body` is the request body parsed into the [openai.ChatCompletionRequest].
+	//	- `onRetry` is true if this is a retry request.
+	//	- This returns `headerMutation` and `bodyMutation` that can be nil to indicate no mutation.
+	RequestBody(raw []byte, body *anthropic.Message, onRetry bool) (
+		headerMutation *extprocv3.HeaderMutation,
+		bodyMutation *extprocv3.BodyMutation,
+		err error,
+	)
+
+	// ResponseHeaders translates the response headers.
+	// 	- `headers` is the response headers.
+	//	- This returns `headerMutation` that can be nil to indicate no mutation.
+	ResponseHeaders(headers map[string]string) (
+		headerMutation *extprocv3.HeaderMutation,
+		err error,
+	)
+
+	// ResponseBody translates the response body. When stream=true, this is called for each chunk of the response body.
+	// 	- `body` is the response body either chunk or the entire body, depending on the context.
+	//	- This returns `headerMutation` and `bodyMutation` that can be nil to indicate no mutation.
+	//  - This returns `tokenUsage` that is extracted from the body and will be used to do token rate limiting.
+	ResponseBody(respHeaders map[string]string, body io.Reader, endOfStream bool) (
+		headerMutation *extprocv3.HeaderMutation,
+		bodyMutation *extprocv3.BodyMutation,
+		tokenUsage LLMTokenUsage,
+		err error,
+	)
+}
+
 // OpenAIEmbeddingTranslator translates the request and response messages between the client and the backend API schemas
 // for /v1/embeddings endpoint of OpenAI.
 //
@@ -120,4 +157,8 @@ type LLMTokenUsage struct {
 	OutputTokens uint32
 	// TotalTokens is the total number of tokens consumed.
 	TotalTokens uint32
+	// CacheCreationInputTokens refer to the number of input tokens that are written to the cache when creating a new entry.
+	CacheCreationInputTokens int64
+	// CacheReadInputTokens refers to the number of input tokens in a prompt that were successfully retrieved from a cache instead of being re-processed by the LLM from scratch.
+	CacheReadInputTokens int64
 }

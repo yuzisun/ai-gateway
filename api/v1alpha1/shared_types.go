@@ -43,6 +43,11 @@ const (
 	//
 	// https://github.com/openai/openai-openapi
 	APISchemaOpenAI APISchema = "OpenAI"
+	// APISchemaAnthropic is the Anthropic schema.
+	//
+	// https://github.com/openai/openai-openapi
+	APISchemaAnthropic APISchema = "Anthropic"
+	//
 	// APISchemaAWSBedrock is the AWS Bedrock schema.
 	//
 	// https://docs.aws.amazon.com/bedrock/latest/APIReference/API_Operations_Amazon_Bedrock_Runtime.html
