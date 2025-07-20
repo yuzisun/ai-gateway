@@ -9,12 +9,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	"io"
 	"path"
 	"strconv"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"github.com/tidwall/sjson"
@@ -39,12 +39,12 @@ type anthropicToAnthropicTranslatorMessage struct {
 }
 
 // RequestBody implements [AnthropicMessageTranslator.RequestBody].
-func (o *anthropicToAnthropicTranslatorMessage) RequestBody(raw []byte, req *anthropic.Message, onRetry bool) (
+func (o *anthropicToAnthropicTranslatorMessage) RequestBody(raw []byte, req *anthropic.MessageNewParams, onRetry bool) (
 	headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, err error,
 ) {
-	/*if req.Stream {
-		o.stream = true
-	}*/
+	if val, ok := req.Metadata.ExtraFields()["stream"]; ok {
+		o.stream = val.(bool)
+	}
 	var newBody []byte
 	if o.modelNameOverride != "" {
 		// If modelName is set we override the model to be used for the request.

@@ -40,12 +40,12 @@ type anthropicToAWSBedrockTranslatorMessage struct {
 }
 
 // RequestBody implements [AnthropicMessageTranslator.RequestBody].
-func (o *anthropicToAWSBedrockTranslatorMessage) RequestBody(raw []byte, req *anthropic.Message, onRetry bool) (
+func (o *anthropicToAWSBedrockTranslatorMessage) RequestBody(raw []byte, req *anthropic.MessageNewParams, onRetry bool) (
 	headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, err error,
 ) {
-	/*if req.Stream {
-		o.stream = true
-	}*/
+	if val, ok := req.Metadata.ExtraFields()["stream"]; ok {
+		o.stream = val.(bool)
+	}
 	var newBody []byte
 	if o.modelNameOverride != "" {
 		// If modelName is set we override the model to be used for the request.

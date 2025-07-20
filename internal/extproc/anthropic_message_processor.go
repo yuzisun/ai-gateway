@@ -68,7 +68,7 @@ type anthropicMessageProcessorRouterFilter struct {
 	// originalRequestBody is the original request body that is passed to the upstream filter.
 	// This is used to perform the transformation of the request body on the original input
 	// when the request is retried.
-	originalRequestBody    *anthropic.Message
+	originalRequestBody    *anthropic.MessageNewParams
 	originalRequestBodyRaw []byte
 	// upstreamFilterCount is the number of upstream filters that have been processed.
 	// This is used to determine if the request is a retry request.
@@ -140,7 +140,7 @@ type anthropicMessageProcessorUpstreamFilter struct {
 	backendName            string
 	handler                backendauth.Handler
 	originalRequestBodyRaw []byte
-	originalRequestBody    *anthropic.Message
+	originalRequestBody    *anthropic.MessageNewParams
 	translator             translator.AnthropicMessageTranslator
 	// onRetry is true if this is a retry request at the upstream filter.
 	onRetry bool
@@ -362,8 +362,8 @@ func (c *anthropicMessageProcessorUpstreamFilter) mergeWithTokenLatencyMetadata(
 	innerVal.Fields["token_latency_itl"] = &structpb.Value{Kind: &structpb.Value_NumberValue{NumberValue: interTokenLatencyMs}}
 }
 
-func parseAnthropicMessageBody(body *extprocv3.HttpBody) (modelName string, rb *anthropic.Message, err error) {
-	var anthropicMessageReq anthropic.Message
+func parseAnthropicMessageBody(body *extprocv3.HttpBody) (modelName string, rb *anthropic.MessageNewParams, err error) {
+	var anthropicMessageReq anthropic.MessageNewParams
 	if err := json.Unmarshal(body.Body, &anthropicMessageReq); err != nil {
 		return "", nil, fmt.Errorf("failed to unmarshal body: %w", err)
 	}

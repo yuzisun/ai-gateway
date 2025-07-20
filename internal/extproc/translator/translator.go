@@ -87,7 +87,7 @@ type AnthropicMessageTranslator interface {
 	// 	- `body` is the request body parsed into the [openai.ChatCompletionRequest].
 	//	- `onRetry` is true if this is a retry request.
 	//	- This returns `headerMutation` and `bodyMutation` that can be nil to indicate no mutation.
-	RequestBody(raw []byte, body *anthropic.Message, onRetry bool) (
+	RequestBody(raw []byte, body *anthropic.MessageNewParams, onRetry bool) (
 		headerMutation *extprocv3.HeaderMutation,
 		bodyMutation *extprocv3.BodyMutation,
 		err error,
