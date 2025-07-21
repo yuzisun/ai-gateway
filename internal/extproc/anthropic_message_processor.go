@@ -29,9 +29,6 @@ import (
 // AnthropicMessageProcessorFactory returns a factory method to instantiate the anthropic message processor.
 func AnthropicMessageProcessorFactory(ccm x.ChatCompletionMetrics) ProcessorFactory {
 	return func(config *processorConfig, requestHeaders map[string]string, logger *slog.Logger, isUpstreamFilter bool) (Processor, error) {
-		if config.schema.Name != filterapi.APISchemaAnthropic {
-			return nil, fmt.Errorf("unsupported API schema: %s", config.schema.Name)
-		}
 		logger = logger.With("processor", "anthropic messages", "isUpstreamFilter", fmt.Sprintf("%v", isUpstreamFilter))
 		if !isUpstreamFilter {
 			return &anthropicMessageProcessorRouterFilter{

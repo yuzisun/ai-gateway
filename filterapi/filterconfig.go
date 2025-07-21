@@ -105,7 +105,7 @@ const (
 	// APISchemaOpenAI represents the standard OpenAI API schema.
 	APISchemaOpenAI APISchemaName = "OpenAI"
 	// APISchemaAnthropic represents the anthropic schema.
-	APISchemaAnthropic APISchemaName = "OpenAI"
+	APISchemaAnthropic APISchemaName = "Anthropic"
 	// APISchemaAWSBedrock represents the AWS Bedrock API schema.
 	APISchemaAWSBedrock APISchemaName = "AWSBedrock"
 	// APISchemaAzureOpenAI represents the Azure OpenAI API schema.
