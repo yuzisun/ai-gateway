@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	"io"
 	"path"
 	"strconv"
@@ -17,8 +18,6 @@ import (
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"github.com/tidwall/sjson"
-
-	"github.com/envoyproxy/ai-gateway/internal/apischema/openai"
 )
 
 // NewMessageAnthropicToAWSBedrockTranslator implements [Factory] for Anthropic to Anthropic translation.
@@ -46,9 +45,18 @@ func (o *anthropicToAWSBedrockTranslatorMessage) RequestBody(raw []byte, req *an
 	if val, ok := req.Metadata.ExtraFields()["stream"]; ok {
 		o.stream = val.(bool)
 	}
+	var pathTemplate string
+	if o.stream {
+		o.stream = true
+		pathTemplate = "/model/%s/converse-stream"
+	} else {
+		pathTemplate = "/model/%s/converse"
+	}
+	modelName := string(req.Model)
 	var newBody []byte
 	if o.modelNameOverride != "" {
-		// If modelName is set we override the model to be used for the request.
+		modelName = o.modelNameOverride
+		// If modelName is set, we override the model to be used for the request.
 		out, err := sjson.SetBytesOptions(raw, "model", o.modelNameOverride, &sjson.Options{
 			Optimistic:     true,
 			ReplaceInPlace: true,
@@ -59,12 +67,12 @@ func (o *anthropicToAWSBedrockTranslatorMessage) RequestBody(raw []byte, req *an
 		newBody = out
 	}
 
-	// Always set the path header to the chat completions endpoint so that the request is routed correctly.
+	// Always set the path header to the converse endpoint so that the request is routed correctly.
 	headerMutation = &extprocv3.HeaderMutation{
 		SetHeaders: []*corev3.HeaderValueOption{
 			{Header: &corev3.HeaderValue{
 				Key:      ":path",
-				RawValue: []byte(o.path),
+				RawValue: []byte(fmt.Sprintf(pathTemplate, modelName)),
 			}},
 		},
 	}
@@ -87,28 +95,26 @@ func (o *anthropicToAWSBedrockTranslatorMessage) RequestBody(raw []byte, req *an
 }
 
 // ResponseError implements [Translator.ResponseError]
-// For OpenAI based backend we return the OpenAI error type as is.
-// If connection fails the error body is translated to OpenAI error type for events such as HTTP 503 or 504.
+// For Anthropic based backend we return the Anthropic error type as is.
+// If connection fails, the error body is translated to an Anthropic error type for events such as HTTP 503 or 504.
 func (o *anthropicToAWSBedrockTranslatorMessage) ResponseError(respHeaders map[string]string, body io.Reader) (
 	headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, err error,
 ) {
 	statusCode := respHeaders[statusHeaderName]
 	if v, ok := respHeaders[contentTypeHeaderName]; ok && v != jsonContentType {
-		var openaiError openai.Error
+		var errorResponse anthropic.ErrorResponse
 		buf, err := io.ReadAll(body)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read error body: %w", err)
 		}
-		openaiError = openai.Error{
-			Type: "error",
-			Error: openai.ErrorType{
-				Type:    openAIBackendError,
+		errorResponse = anthropic.ErrorResponse{
+			Error: anthropic.ErrorObjectUnion{
 				Message: string(buf),
-				Code:    &statusCode,
 			},
+			Type: constant.Error(statusCode),
 		}
 		mut := &extprocv3.BodyMutation_Body{}
-		mut.Body, err = json.Marshal(openaiError)
+		mut.Body, err = json.Marshal(errorResponse)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal error body: %w", err)
 		}
@@ -147,14 +153,16 @@ func (o *anthropicToAWSBedrockTranslatorMessage) ResponseBody(respHeaders map[st
 		}
 		return
 	}
-	var resp openai.ChatCompletionResponse
+	var resp anthropic.Message
 	if err := json.NewDecoder(body).Decode(&resp); err != nil {
 		return nil, nil, tokenUsage, fmt.Errorf("failed to unmarshal body: %w", err)
 	}
 	tokenUsage = LLMTokenUsage{
-		InputTokens:  uint32(resp.Usage.PromptTokens),     //nolint:gosec
-		OutputTokens: uint32(resp.Usage.CompletionTokens), //nolint:gosec
-		TotalTokens:  uint32(resp.Usage.TotalTokens),      //nolint:gosec
+		InputTokens:              uint32(resp.Usage.InputTokens),                           //nolint:gosec
+		OutputTokens:             uint32(resp.Usage.OutputTokens),                          //nolint:gosec
+		TotalTokens:              uint32(resp.Usage.InputTokens + resp.Usage.OutputTokens), //nolint:gosec
+		CacheCreationInputTokens: resp.Usage.CacheCreationInputTokens,
+		CacheReadInputTokens:     resp.Usage.CacheReadInputTokens,
 	}
 	return
 }
@@ -174,19 +182,19 @@ func (o *anthropicToAWSBedrockTranslatorMessage) extractUsageFromBufferEvent() (
 		if !bytes.HasPrefix(line, dataPrefix) {
 			continue
 		}
-		var event openai.ChatCompletionResponseChunk
+		var event anthropic.MessageStreamEventUnion
 		if err := json.Unmarshal(bytes.TrimPrefix(line, dataPrefix), &event); err != nil {
 			continue
 		}
-		if usage := event.Usage; usage != nil {
-			tokenUsage = LLMTokenUsage{
-				InputTokens:  uint32(usage.PromptTokens),     //nolint:gosec
-				OutputTokens: uint32(usage.CompletionTokens), //nolint:gosec
-				TotalTokens:  uint32(usage.TotalTokens),      //nolint:gosec
-			}
-			o.bufferingDone = true
-			o.buffered = nil
-			return
+		tokenUsage = LLMTokenUsage{
+			InputTokens:              uint32(event.Usage.InputTokens),                            //nolint:gosec
+			OutputTokens:             uint32(event.Usage.OutputTokens),                           //nolint:gosec
+			TotalTokens:              uint32(event.Usage.InputTokens + event.Usage.OutputTokens), //nolint:gosec
+			CacheCreationInputTokens: event.Usage.CacheCreationInputTokens,
+			CacheReadInputTokens:     event.Usage.CacheReadInputTokens,
 		}
+		o.bufferingDone = true
+		o.buffered = nil
+		return
 	}
 }
