@@ -665,6 +665,7 @@ spec:
                     - AzureOpenAI
                     - GCPVertexAI
                     - GCPAnthropic
+                    - Anthropic
                     type: string
                   version:
                     description: |-
@@ -687,7 +688,7 @@ spec:
                 - name
                 type: object
                 x-kubernetes-validations:
-                - rule: self.name == 'OpenAI'
+                - rule: self.name == 'OpenAI' || self.name == 'Anthropic'
               targetRefs:
                 description: |-
                   TargetRefs are the names of the Gateway resources this AIGatewayRoute is being attached to.

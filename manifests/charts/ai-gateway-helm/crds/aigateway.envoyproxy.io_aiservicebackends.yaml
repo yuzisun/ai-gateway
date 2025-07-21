@@ -179,6 +179,7 @@ spec:
                     - AzureOpenAI
                     - GCPVertexAI
                     - GCPAnthropic
+                    - Anthropic
                     type: string
                   version:
                     description: |-

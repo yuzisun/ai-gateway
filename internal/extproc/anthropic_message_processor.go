@@ -344,7 +344,9 @@ func (c *anthropicMessageProcessorUpstreamFilter) SetBackend(ctx context.Context
 	c.originalRequestBody = rp.originalRequestBody
 	c.originalRequestBodyRaw = rp.originalRequestBodyRaw
 	c.onRetry = rp.upstreamFilterCount > 1
-	// c.stream = c.originalRequestBody.Stream
+	if val, ok := c.originalRequestBody.Metadata.ExtraFields()["stream"]; ok {
+		c.stream = val.(bool)
+	}
 	rp.upstreamFilter = c
 	return
 }
