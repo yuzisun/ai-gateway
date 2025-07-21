@@ -58,6 +58,39 @@ spec:
         - name: envoy-ai-gateway-basic-testupstream
 ---
 apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIGatewayRoute
+metadata:
+  name: envoy-ai-gateway-basic-anthropic
+  namespace: default
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: envoy-ai-gateway-basic
+  rules:
+    - backendRefs:
+        - name: envoy-ai-gateway-basic-aws-anthropic
+          priority: 0
+          weight: 1
+      matches:
+        - headers:
+            - name: x-ai-eg-model
+              type: Exact
+              value: anthropic.claude-3-5-sonnet-20240620-v1:0
+    - backendRefs:
+        - name: envoy-ai-gateway-basic-anthropic
+          priority: 0
+          weight: 1
+      matches:
+        - headers:
+            - name: x-ai-eg-model
+              type: Exact
+              value: anthropic.ModelClaudeSonnet4_20250514
+      modelsOwnedBy: Envoy AI Gateway
+  schema:
+    name: Anthropic
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
 kind: AIServiceBackend
 metadata:
   name: envoy-ai-gateway-basic-openai
@@ -82,6 +115,24 @@ metadata:
 spec:
   schema:
     name: AWSBedrock
+  backendRef:
+    name: envoy-ai-gateway-basic-aws
+    kind: Backend
+    group: gateway.envoyproxy.io
+  backendSecurityPolicyRef:
+    name: envoy-ai-gateway-basic-aws-credentials
+    kind: BackendSecurityPolicy
+    group: aigateway.envoyproxy.io
+---
+# AWS Anthropic Example
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: AIServiceBackend
+metadata:
+  name: envoy-ai-gateway-basic-aws-anthropic
+  namespace: default
+spec:
+  schema:
+    name: Anthropic
   backendRef:
     name: envoy-ai-gateway-basic-aws
     kind: Backend
@@ -137,6 +188,18 @@ spec:
   apiKey:
     secretRef:
       name: envoy-ai-gateway-basic-openai-apikey
+      namespace: default
+---
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendSecurityPolicy
+metadata:
+  name: envoy-ai-gateway-basic-anthropic-apikey
+  namespace: default
+spec:
+  type: APIKey
+  apiKey:
+    secretRef:
+      name: envoy-ai-gateway-basic-anthropic-apikey
       namespace: default
 ---
 apiVersion: aigateway.envoyproxy.io/v1alpha1
@@ -207,6 +270,17 @@ spec:
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: Backend
 metadata:
+  name: envoy-ai-gateway-basic-anthropic
+  namespace: default
+spec:
+  endpoints:
+    - fqdn:
+        hostname: api.anthropic.com
+        port: 443
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
   name: envoy-ai-gateway-basic-aws
   namespace: default
 spec:
@@ -250,6 +324,20 @@ spec:
   validation:
     wellKnownCACertificates: "System"
     hostname: api.openai.com
+---
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: BackendTLSPolicy
+metadata:
+  name: envoy-ai-gateway-basic-anthropic-tls
+  namespace: default
+spec:
+  targetRefs:
+    - group: 'gateway.envoyproxy.io'
+      kind: Backend
+      name: envoy-ai-gateway-basic-anthropic
+  validation:
+    wellKnownCACertificates: "System"
+    hostname: api.anthropic.com
 ---
 apiVersion: gateway.networking.k8s.io/v1alpha3
 kind: BackendTLSPolicy
@@ -301,6 +389,15 @@ metadata:
 type: Opaque
 stringData:
   apiKey: OPENAI_API_KEY  # Replace with your OpenAI API key.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: envoy-ai-gateway-basic-anthropic-apikey
+  namespace: default
+type: Opaque
+stringData:
+  apiKey: ANTHROPIC_API_KEY  # Replace with your Anthropic API key.
 ---
 apiVersion: v1
 kind: Secret
