@@ -20,16 +20,16 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-// NewMessageAnthropicToAWSBedrockTranslator implements [Factory] for Anthropic to Anthropic translation.
-func NewMessageAnthropicToAWSBedrockTranslator(apiVersion string, modelNameOverride string) AnthropicMessageTranslator {
-	return &anthropicToAWSBedrockTranslatorMessage{
+// NewMessageAnthropicToGCPAnthropicTranslator implements [Factory] for Anthropic to Anthropic translation.
+func NewMessageAnthropicToGCPAnthropicTranslator(apiVersion string, modelNameOverride string) AnthropicMessageTranslator {
+	return &anthropicToGCPAnthropicTranslatorMessage{
 		modelNameOverride: modelNameOverride,
 		path:              path.Join("/", apiVersion, "message"),
 	}
 }
 
 // anthropicToAWSBedrockTranslatorMessage implements [Translator] for /chat/completions.
-type anthropicToAWSBedrockTranslatorMessage struct {
+type anthropicToGCPAnthropicTranslatorMessage struct {
 	modelNameOverride string
 	stream            bool
 	buffered          []byte
@@ -39,18 +39,13 @@ type anthropicToAWSBedrockTranslatorMessage struct {
 }
 
 // RequestBody implements [AnthropicMessageTranslator.RequestBody].
-func (o *anthropicToAWSBedrockTranslatorMessage) RequestBody(raw []byte, req *anthropic.MessageNewParams, onRetry bool) (
+func (o *anthropicToGCPAnthropicTranslatorMessage) RequestBody(raw []byte, req *anthropic.MessageNewParams, onRetry bool) (
 	headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, err error,
 ) {
 	if val, ok := req.Metadata.ExtraFields()["stream"]; ok {
 		o.stream = val.(bool)
 	}
-	var pathTemplate string
-	if o.stream {
-		pathTemplate = "/model/%s/converse-stream"
-	} else {
-		pathTemplate = "/model/%s/converse"
-	}
+
 	modelName := string(req.Model)
 	var newBody []byte
 	if o.modelNameOverride != "" {
@@ -65,13 +60,13 @@ func (o *anthropicToAWSBedrockTranslatorMessage) RequestBody(raw []byte, req *an
 		}
 		newBody = out
 	}
-
+	pathSuffix := buildGCPModelPathSuffix(gcpModelPublisherAnthropic, modelName, "rawPredict")
 	// Always set the path header to the converse endpoint so that the request is routed correctly.
 	headerMutation = &extprocv3.HeaderMutation{
 		SetHeaders: []*corev3.HeaderValueOption{
 			{Header: &corev3.HeaderValue{
 				Key:      ":path",
-				RawValue: []byte(fmt.Sprintf(pathTemplate, modelName)),
+				RawValue: []byte(pathSuffix),
 			}},
 		},
 	}
@@ -96,7 +91,7 @@ func (o *anthropicToAWSBedrockTranslatorMessage) RequestBody(raw []byte, req *an
 // ResponseError implements [Translator.ResponseError]
 // For Anthropic based backend we return the Anthropic error type as is.
 // If connection fails, the error body is translated to an Anthropic error type for events such as HTTP 503 or 504.
-func (o *anthropicToAWSBedrockTranslatorMessage) ResponseError(respHeaders map[string]string, body io.Reader) (
+func (o *anthropicToGCPAnthropicTranslatorMessage) ResponseError(respHeaders map[string]string, body io.Reader) (
 	headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, err error,
 ) {
 	statusCode := respHeaders[statusHeaderName]
@@ -125,12 +120,12 @@ func (o *anthropicToAWSBedrockTranslatorMessage) ResponseError(respHeaders map[s
 }
 
 // ResponseHeaders implements [Translator.ResponseHeaders].
-func (o *anthropicToAWSBedrockTranslatorMessage) ResponseHeaders(map[string]string) (headerMutation *extprocv3.HeaderMutation, err error) {
+func (o *anthropicToGCPAnthropicTranslatorMessage) ResponseHeaders(map[string]string) (headerMutation *extprocv3.HeaderMutation, err error) {
 	return nil, nil
 }
 
 // ResponseBody implements [Translator.ResponseBody].
-func (o *anthropicToAWSBedrockTranslatorMessage) ResponseBody(respHeaders map[string]string, body io.Reader, _ bool) (
+func (o *anthropicToGCPAnthropicTranslatorMessage) ResponseBody(respHeaders map[string]string, body io.Reader, _ bool) (
 	headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, tokenUsage LLMTokenUsage, err error,
 ) {
 	if v, ok := respHeaders[statusHeaderName]; ok {
@@ -168,7 +163,7 @@ func (o *anthropicToAWSBedrockTranslatorMessage) ResponseBody(respHeaders map[st
 
 // extractUsageFromBufferEvent extracts the token usage from the buffered event.
 // Once the usage is extracted, it returns the number of tokens used, and bufferingDone is set to true.
-func (o *anthropicToAWSBedrockTranslatorMessage) extractUsageFromBufferEvent() (tokenUsage LLMTokenUsage) {
+func (o *anthropicToGCPAnthropicTranslatorMessage) extractUsageFromBufferEvent() (tokenUsage LLMTokenUsage) {
 	dataPrefix := []byte("data: ")
 
 	for {

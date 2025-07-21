@@ -156,6 +156,8 @@ func (c *anthropicMessageProcessorUpstreamFilter) selectTranslator(out filterapi
 		c.translator = translator.NewMessageAnthropicToAnthropicTranslator(out.Version, c.modelNameOverride)
 	case filterapi.APISchemaAWSBedrockAnthropic:
 		c.translator = translator.NewMessageAnthropicToAWSBedrockTranslator(out.Version, c.modelNameOverride)
+	case filterapi.APISchemaGCPAnthropic:
+		c.translator = translator.NewMessageAnthropicToGCPAnthropicTranslator(out.Version, c.modelNameOverride)
 	default:
 		return fmt.Errorf("unsupported API schema: backend=%s", out)
 	}
