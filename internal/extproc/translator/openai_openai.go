@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/openai/openai-go"
 	"io"
 	"path"
 	"strconv"
@@ -17,7 +18,7 @@ import (
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"github.com/tidwall/sjson"
 
-	"github.com/envoyproxy/ai-gateway/internal/apischema/openai"
+	openaischema "github.com/envoyproxy/ai-gateway/internal/apischema/openai"
 )
 
 // NewChatCompletionOpenAIToOpenAITranslator implements [Factory] for OpenAI to OpenAI translation.
@@ -36,7 +37,7 @@ type openAIToOpenAITranslatorV1ChatCompletion struct {
 }
 
 // RequestBody implements [OpenAIChatCompletionTranslator.RequestBody].
-func (o *openAIToOpenAITranslatorV1ChatCompletion) RequestBody(raw []byte, req *openai.ChatCompletionRequest, forceBodyMutation bool) (
+func (o *openAIToOpenAITranslatorV1ChatCompletion) RequestBody(raw []byte, req *openaischema.ChatCompletionRequest, forceBodyMutation bool) (
 	headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, err error,
 ) {
 	if req.Stream {
@@ -89,14 +90,14 @@ func (o *openAIToOpenAITranslatorV1ChatCompletion) ResponseError(respHeaders map
 ) {
 	statusCode := respHeaders[statusHeaderName]
 	if v, ok := respHeaders[contentTypeHeaderName]; ok && v != jsonContentType {
-		var openaiError openai.Error
+		var openaiError openaischema.Error
 		buf, err := io.ReadAll(body)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read error body: %w", err)
 		}
-		openaiError = openai.Error{
+		openaiError = openaischema.Error{
 			Type: "error",
-			Error: openai.ErrorType{
+			Error: openaischema.ErrorType{
 				Type:    openAIBackendError,
 				Message: string(buf),
 				Code:    &statusCode,
@@ -142,7 +143,7 @@ func (o *openAIToOpenAITranslatorV1ChatCompletion) ResponseBody(respHeaders map[
 		}
 		return
 	}
-	var resp openai.ChatCompletionResponse
+	var resp openai.ChatCompletionChunk
 	if err := json.NewDecoder(body).Decode(&resp); err != nil {
 		return nil, nil, tokenUsage, fmt.Errorf("failed to unmarshal body: %w", err)
 	}
@@ -169,19 +170,18 @@ func (o *openAIToOpenAITranslatorV1ChatCompletion) extractUsageFromBufferEvent()
 		if !bytes.HasPrefix(line, dataPrefix) {
 			continue
 		}
-		var event openai.ChatCompletionResponseChunk
+		var event openai.ChatCompletionChunk
 		if err := json.Unmarshal(bytes.TrimPrefix(line, dataPrefix), &event); err != nil {
 			continue
 		}
-		if usage := event.Usage; usage != nil {
-			tokenUsage = LLMTokenUsage{
-				InputTokens:  uint32(usage.PromptTokens),     //nolint:gosec
-				OutputTokens: uint32(usage.CompletionTokens), //nolint:gosec
-				TotalTokens:  uint32(usage.TotalTokens),      //nolint:gosec
-			}
-			o.bufferingDone = true
-			o.buffered = nil
-			return
+		tokenUsage = LLMTokenUsage{
+			InputTokens:  uint32(event.Usage.PromptTokens),     //nolint:gosec
+			OutputTokens: uint32(event.Usage.CompletionTokens), //nolint:gosec
+			TotalTokens:  uint32(event.Usage.TotalTokens),      //nolint:gosec
 		}
+		o.bufferingDone = true
+		o.buffered = nil
+		return
+
 	}
 }

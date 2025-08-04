@@ -12,9 +12,10 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/openai/openai-go"
 	"k8s.io/utils/ptr"
 
-	"github.com/envoyproxy/ai-gateway/internal/apischema/openai"
+	openaischema "github.com/envoyproxy/ai-gateway/internal/apischema/openai"
 )
 
 // Cassette is an HTTP interaction recording.
@@ -143,67 +144,63 @@ func NewRequest(ctx context.Context, baseURL string, cassetteName Cassette) (*ht
 //
 // Prefer bodies in the OpenAI OpenAPI examples to making them up manually.
 // See https://github.com/openai/openai-openapi/tree/manual_spec
-var requestBodies = map[Cassette]*openai.ChatCompletionRequest{
+var requestBodies = map[Cassette]*openaischema.ChatCompletionRequest{
 	CassetteChatBasic: {
-		Model: openai.ModelGPT41Nano,
+		Model: openaischema.ModelGPT41Nano,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: "Hello!",
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfString: openai.Opt("Hello!"),
 					},
 				},
 			},
 		},
 	},
 	CassetteChatStreaming: {
-		Model: openai.ModelGPT41Nano,
+		Model: openaischema.ModelGPT41Nano,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleDeveloper,
-				Value: openai.ChatCompletionDeveloperMessageParam{
-					Role: openai.ChatMessageRoleDeveloper,
-					Content: openai.StringOrArray{
-						Value: "You are a helpful assistant.",
+				OfDeveloper: &openai.ChatCompletionDeveloperMessageParam{
+					Role: openaischema.ChatMessageRoleDeveloper,
+					Content: openai.ChatCompletionDeveloperMessageParamContentUnion{
+						OfString: openai.Opt("You are a helpful assistant."),
 					},
 				},
 			},
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: "Hello!",
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfString: openai.Opt("Hello!"),
 					},
 				},
 			},
 		},
 		Stream: true,
-		StreamOptions: &openai.StreamOptions{
+		StreamOptions: &openaischema.StreamOptions{
 			IncludeUsage: true,
 		},
 	},
 	CassetteChatTools: {
-		Model: openai.ModelGPT41Nano,
+		Model: openaischema.ModelGPT41Nano,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: "What is the weather like in Boston today?",
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfString: openai.Opt("What is the weather like in Boston today?"),
 					},
 				},
 			},
 		},
-		Tools: []openai.Tool{
+		Tools: []openai.ChatCompletionToolParam{
 			{
-				Type: openai.ToolTypeFunction,
-				Function: &openai.FunctionDefinition{
+				Type: openaischema.ToolTypeFunction,
+				Function: openai.FunctionDefinitionParam{
 					Name:        "get_current_weather",
-					Description: "Get the current weather in a given location",
+					Description: openai.Opt("Get the current weather in a given location"),
 					Parameters: map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
@@ -221,26 +218,27 @@ var requestBodies = map[Cassette]*openai.ChatCompletionRequest{
 				},
 			},
 		},
-		ToolChoice: "auto",
+		ToolChoice: openai.ChatCompletionToolChoiceOptionUnionParam{
+			OfAuto: openai.Opt("auto"),
+		},
 	},
 	CassetteChatMultimodal: {
-		Model: openai.ModelGPT41Nano,
+		Model: openaischema.ModelGPT41Nano,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: []openai.ChatCompletionContentPartUserUnionParam{
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfArrayOfContentParts: []openai.ChatCompletionContentPartUnionParam{
 							{
-								TextContent: &openai.ChatCompletionContentPartTextParam{
-									Type: string(openai.ChatCompletionContentPartTextTypeText),
+								OfText: &openai.ChatCompletionContentPartTextParam{
+									Type: openaischema.ChatCompletionContentPartTextTypeText,
 									Text: "What is in this image?",
 								},
 							},
 							{
-								ImageContent: &openai.ChatCompletionContentPartImageParam{
-									Type: openai.ChatCompletionContentPartImageTypeImageURL,
+								OfImageURL: &openai.ChatCompletionContentPartImageParam{
+									Type: openaischema.ChatCompletionContentPartImageTypeImageURL,
 									ImageURL: openai.ChatCompletionContentPartImageImageURLParam{
 										URL: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
 									},
@@ -254,41 +252,37 @@ var requestBodies = map[Cassette]*openai.ChatCompletionRequest{
 		MaxTokens: ptr.To[int64](100),
 	},
 	CassetteChatMultiturn: {
-		Model: openai.ModelGPT41Nano,
+		Model: openaischema.ModelGPT41Nano,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleDeveloper,
-				Value: openai.ChatCompletionDeveloperMessageParam{
-					Role: openai.ChatMessageRoleDeveloper,
-					Content: openai.StringOrArray{
-						Value: "You are a helpful assistant.",
+				OfDeveloper: &openai.ChatCompletionDeveloperMessageParam{
+					Role: openaischema.ChatMessageRoleDeveloper,
+					Content: openai.ChatCompletionDeveloperMessageParamContentUnion{
+						OfString: openai.Opt("You are a helpful assistant."),
 					},
 				},
 			},
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: "Hello!",
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfString: openai.Opt("Hello!"),
 					},
 				},
 			},
 			{
-				Type: openai.ChatMessageRoleAssistant,
-				Value: openai.ChatCompletionAssistantMessageParam{
-					Role: openai.ChatMessageRoleAssistant,
-					Content: openai.StringOrAssistantRoleContentUnion{
-						Value: "Hello! How can I assist you today?",
+				OfAssistant: &openai.ChatCompletionAssistantMessageParam{
+					Role: openaischema.ChatMessageRoleAssistant,
+					Content: openai.ChatCompletionAssistantMessageParamContentUnion{
+						OfString: openai.Opt("Hello! How can I assist you today?"),
 					},
 				},
 			},
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: "Answer in up to 5 words: What's the weather like?",
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfString: openai.Opt("Answer in up to 5 words: What's the weather like?"),
 					},
 				},
 			},
@@ -296,45 +290,43 @@ var requestBodies = map[Cassette]*openai.ChatCompletionRequest{
 		Temperature: ptr.To(0.7),
 	},
 	CassetteChatJSONMode: {
-		Model: openai.ModelGPT41Nano,
+		Model: openaischema.ModelGPT41Nano,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: "Generate a JSON object with three properties: name, age, and city.",
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfString: openai.Opt("Generate a JSON object with three properties: name, age, and city."),
 					},
 				},
 			},
 		},
-		ResponseFormat: &openai.ChatCompletionResponseFormat{
-			Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONObject: &openai.ResponseFormatJSONObjectParam{},
 		},
 	},
 	CassetteChatNoMessages: {
-		Model:    openai.ModelGPT41Nano,
+		Model:    openaischema.ModelGPT41Nano,
 		Messages: []openai.ChatCompletionMessageParamUnion{},
 	},
 	CassetteChatParallelTools: {
-		Model: openai.ModelGPT41Nano,
+		Model: openaischema.ModelGPT41Nano,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: "What is the weather like in San Francisco?",
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfString: openai.Opt("What is the weather like in San Francisco?"),
 					},
 				},
 			},
 		},
-		Tools: []openai.Tool{
+		Tools: []openai.ChatCompletionToolParam{
 			{
-				Type: openai.ToolTypeFunction,
-				Function: &openai.FunctionDefinition{
+				Type: openaischema.ToolTypeFunction,
+				Function: openai.FunctionDefinitionParam{
 					Name:        "get_current_weather",
-					Description: "Get the current weather in a given location",
+					Description: openai.Opt("Get the current weather in a given location"),
 					Parameters: map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
@@ -352,19 +344,18 @@ var requestBodies = map[Cassette]*openai.ChatCompletionRequest{
 				},
 			},
 		},
-		ToolChoice:        "auto",
+		ToolChoice: openai.ChatCompletionToolChoiceOptionUnionParam{
+			OfAuto: openai.Opt("auto"),
+		},
 		ParallelToolCalls: ptr.To(true),
 	},
 	CassetteChatBadRequest: {
-		Model: openai.ModelGPT41Nano,
+		Model: openaischema.ModelGPT41Nano,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: nil,
-					},
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role:    openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{},
 				},
 			},
 		},
@@ -372,23 +363,22 @@ var requestBodies = map[Cassette]*openai.ChatCompletionRequest{
 		MaxTokens:   ptr.To[int64](0),
 	},
 	CassetteChatImageToText: {
-		Model: openai.ModelGPT41Nano,
+		Model: openaischema.ModelGPT41Nano,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: []openai.ChatCompletionContentPartUserUnionParam{
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfArrayOfContentParts: []openai.ChatCompletionContentPartUnionParam{
 							{
-								TextContent: &openai.ChatCompletionContentPartTextParam{
-									Type: string(openai.ChatCompletionContentPartTextTypeText),
+								OfText: &openai.ChatCompletionContentPartTextParam{
+									Type: openaischema.ChatCompletionContentPartTextTypeText,
 									Text: "Answer in up to 5 words: What's in this image?",
 								},
 							},
 							{
-								ImageContent: &openai.ChatCompletionContentPartImageParam{
-									Type: openai.ChatCompletionContentPartImageTypeImageURL,
+								OfImageURL: &openai.ChatCompletionContentPartImageParam{
+									Type: openaischema.ChatCompletionContentPartImageTypeImageURL,
 									ImageURL: openai.ChatCompletionContentPartImageImageURLParam{
 										URL: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAXElEQVR42mNgoAkofv8fBVOkmQyD/sPwn1UlYAzlE6cZpgGmGZlPkgHYDCHKCcia0AwgHlCm+c+f/9gwabajG0CsK+DOxmIA8YZQ6gXkhISG6W8ALj7RtuMTgwMA0WTdqiU1ensAAAAASUVORK5CYII=",
 									},
@@ -404,51 +394,48 @@ var requestBodies = map[Cassette]*openai.ChatCompletionRequest{
 		Model: "gpt-4.1-nano-wrong",
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: "Hello!",
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfString: openai.Opt("Hello!"),
 					},
 				},
 			},
 		},
 	},
 	CassetteChatReasoning: {
-		Model: openai.ModelO3Mini,
+		Model: openaischema.ModelO3Mini,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: "A bat and ball cost $1.10. Bat costs $1 more than ball. Ball cost?",
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfString: openai.Opt("A bat and ball cost $1.10. Bat costs $1 more than ball. Ball cost?"),
 					},
 				},
 			},
 		},
 	},
 	CassetteChatAudioToText: {
-		Model: openai.ModelGPT4oAudioPreview,
+		Model: openaischema.ModelGPT4oAudioPreview,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: []openai.ChatCompletionContentPartUserUnionParam{
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfArrayOfContentParts: []openai.ChatCompletionContentPartUnionParam{
 							{
-								TextContent: &openai.ChatCompletionContentPartTextParam{
-									Type: string(openai.ChatCompletionContentPartTextTypeText),
+								OfText: &openai.ChatCompletionContentPartTextParam{
+									Type: openaischema.ChatCompletionContentPartTextTypeText,
 									Text: "Answer in up to 5 words: What do you hear in this audio?",
 								},
 							},
 							{
-								InputAudioContent: &openai.ChatCompletionContentPartInputAudioParam{
-									Type: openai.ChatCompletionContentPartInputAudioTypeInputAudio,
+								OfInputAudio: &openai.ChatCompletionContentPartInputAudioParam{
+									Type: openaischema.ChatCompletionContentPartInputAudioTypeInputAudio,
 									InputAudio: openai.ChatCompletionContentPartInputAudioInputAudioParam{
 										Data:   "UklGRlwEAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YTgEAADY2NjY2NjY2NjYJycnJycnJycnJ9jY2NjY2NjY2NgnJycnJycnJycn2NjY2NjY2NjY2CcnJycnJycnJyfY2NjY2NjY2NjYJycnJycnJycnJ9jY2NjY2NjY2NgnJycnJycnJycn2NjY2NjY2NjY2CcnJycnJycnJyfY2NjY2NjY2NjYJycnJycnJycnJ9jY2NjY2NjY2NgnJycnJycnJycn2NjY2NjY2NjY2CcnJycnJycnJyfY2NjY2NjY2NjYJycnJycnJycnJ9jY2NjY2NjY2NgnJycnJycnJycn2NjY2NjY2NjY2CcnJycnJycnJyfY2NjY2NjY2NjYJycnJycnJycnJ9jY2NjY2NjY2NgnJycnJycnJycn2NjY2NjY2NjY2NgnJycnJycnJyfY2NjY2NjY2NjYJycnJycnJycnJ9jY2NjY2NjY2NgnJycnJycnJycn2NjY2NjY2NjY2CcnJycnJycnJyfY2NjY2NjY2NjYJycnJycnJycnJ9jY2NjY2NjY2NgnJycnJycnJycnv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/v0BAQEBAv7+/v79AQEBAQL+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAv7+/v79AQEBAQL+/v7+/QEBAQEC/v7+/v0BAQEBAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIA=", // 8-bit style jump sound, 0.135s, 8kHz mono WAV.
-										Format: openai.ChatCompletionContentPartInputAudioInputAudioFormatWAV,
+										Format: openaischema.ChatCompletionContentPartInputAudioInputAudioFormatWAV,
 									},
 								},
 							},
@@ -459,45 +446,42 @@ var requestBodies = map[Cassette]*openai.ChatCompletionRequest{
 		},
 	},
 	CassetteChatTextToAudio: {
-		Model: openai.ModelGPT4oMiniAudioPreview,
+		Model: openaischema.ModelGPT4oMiniAudioPreview,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: "Say a single short 'beep' sound, as brief as possible.",
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfString: openai.Opt("Say a single short 'beep' sound, as brief as possible."),
 					},
 				},
 			},
 		},
 		Audio: &openai.ChatCompletionAudioParam{
-			Format: openai.ChatCompletionAudioFormatOpus,
-			Voice:  openai.ChatCompletionAudioVoiceAlloy,
+			Format: openai.ChatCompletionAudioParamFormatOpus,
+			Voice:  openai.ChatCompletionAudioParamVoiceAlloy,
 		},
-		Modalities: []openai.ChatCompletionModality{
-			openai.ChatCompletionModalityText,
-			openai.ChatCompletionModalityAudio,
+		Modalities: []openaischema.ChatCompletionModality{
+			openaischema.ChatCompletionModalityText,
+			openaischema.ChatCompletionModalityAudio,
 		},
 	},
 	CassetteChatDetailedUsage: {
-		Model: openai.ModelGPT41Nano,
+		Model: openaischema.ModelGPT41Nano,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleDeveloper,
-				Value: openai.ChatCompletionDeveloperMessageParam{
-					Role: openai.ChatMessageRoleDeveloper,
-					Content: openai.StringOrArray{
-						Value: "You are a poetry assistant. Write a haiku when asked.",
+				OfDeveloper: &openai.ChatCompletionDeveloperMessageParam{
+					Role: openaischema.ChatMessageRoleDeveloper,
+					Content: openai.ChatCompletionDeveloperMessageParamContentUnion{
+						OfString: openai.Opt("You are a poetry assistant. Write a haiku when asked."),
 					},
 				},
 			},
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: "Write a haiku about OpenTelemetry tracing.",
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfString: openai.Opt("Write a haiku about OpenTelemetry tracing."),
 					},
 				},
 			},
@@ -506,52 +490,49 @@ var requestBodies = map[Cassette]*openai.ChatCompletionRequest{
 		MaxTokens:   ptr.To[int64](100),
 	},
 	CassetteChatStreamingDetailedUsage: {
-		Model: openai.ModelGPT41Nano,
+		Model: openaischema.ModelGPT41Nano,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: "Say hello",
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfString: openai.Opt("Say hello"),
 					},
 				},
 			},
 		},
 		Stream: true,
-		StreamOptions: &openai.StreamOptions{
+		StreamOptions: &openaischema.StreamOptions{
 			IncludeUsage: true,
 		},
 		MaxTokens: ptr.To[int64](10),
 	},
 	CassetteChatTextToImageTool: {
-		Model: openai.ModelGPT41Nano,
+		Model: openaischema.ModelGPT41Nano,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
-				Type: openai.ChatMessageRoleSystem,
-				Value: openai.ChatCompletionSystemMessageParam{
-					Role: openai.ChatMessageRoleSystem,
-					Content: openai.StringOrArray{
-						Value: "You are an AI assistant that generates simple, sketch-style images with minimal detail. When asked to generate an image, create it with low quality settings for cost efficiency.",
+				OfSystem: &openai.ChatCompletionSystemMessageParam{
+					Role: openaischema.ChatMessageRoleSystem,
+					Content: openai.ChatCompletionSystemMessageParamContentUnion{
+						OfString: openai.Opt("You are an AI assistant that generates simple, sketch-style images with minimal detail. When asked to generate an image, create it with low quality settings for cost efficiency."),
 					},
 				},
 			},
 			{
-				Type: openai.ChatMessageRoleUser,
-				Value: openai.ChatCompletionUserMessageParam{
-					Role: openai.ChatMessageRoleUser,
-					Content: openai.StringOrUserRoleContentUnion{
-						Value: "Draw a simple, minimalist image of a cute cat playing with a ball of yarn in a sketch style.",
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Role: openaischema.ChatMessageRoleUser,
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfString: openai.Opt("Draw a simple, minimalist image of a cute cat playing with a ball of yarn in a sketch style."),
 					},
 				},
 			},
 		},
-		Tools: []openai.Tool{
+		Tools: []openai.ChatCompletionToolParam{
 			{
-				Type: openai.ToolTypeFunction,
-				Function: &openai.FunctionDefinition{
+				Type: openaischema.ToolTypeFunction,
+				Function: openai.FunctionDefinitionParam{
 					Name:        "generate_image",
-					Description: "Generate a simple, minimalist image based on the given prompt in sketch style with low quality for cost efficiency.",
+					Description: openai.Opt("Generate a simple, minimalist image based on the given prompt in sketch style with low quality for cost efficiency."),
 					Parameters: map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
@@ -565,10 +546,12 @@ var requestBodies = map[Cassette]*openai.ChatCompletionRequest{
 				},
 			},
 		},
-		ToolChoice: openai.ChatCompletionNamedToolChoice{
-			Type: openai.ToolChoiceTypeFunction,
-			Function: openai.ChatCompletionNamedToolChoiceFunction{
-				Name: "generate_image",
+		ToolChoice: openai.ChatCompletionToolChoiceOptionUnionParam{
+			OfChatCompletionNamedToolChoice: &openai.ChatCompletionNamedToolChoiceParam{
+				Type: openaischema.ToolChoiceTypeFunction,
+				Function: openai.ChatCompletionNamedToolChoiceFunctionParam{
+					Name: "generate_image",
+				},
 			},
 		},
 		MaxTokens: ptr.To[int64](150),

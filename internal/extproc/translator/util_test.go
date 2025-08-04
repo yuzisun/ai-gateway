@@ -6,12 +6,13 @@
 package translator
 
 import (
+	"github.com/openai/openai-go"
 	"testing"
 
 	"github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/envoyproxy/ai-gateway/internal/apischema/openai"
+	aigwopenai "github.com/envoyproxy/ai-gateway/internal/apischema/openai"
 )
 
 // TestParseDataURI tests the parseDataURI function with various inputs.
@@ -167,13 +168,14 @@ func TestBuildRequestMutations(t *testing.T) {
 // TestSystemMsgToDeveloperMsg tests the systemMsgToDeveloperMsg function.
 func TestSystemMsgToDeveloperMsg(t *testing.T) {
 	systemMsg := openai.ChatCompletionSystemMessageParam{
-		Name:    "test-system",
-		Content: openai.StringOrArray{Value: "You are a helpful assistant."},
+		Name: openai.Opt("test-system"),
+		Content: openai.ChatCompletionSystemMessageParamContentUnion{
+			OfString: openai.Opt("You are a helpful assistant.")},
 	}
 	developerMsg := systemMsgToDeveloperMsg(systemMsg)
 	require.Equal(t, "test-system", developerMsg.Name)
-	require.Equal(t, openai.ChatMessageRoleDeveloper, developerMsg.Role)
-	require.Equal(t, openai.StringOrArray{Value: "You are a helpful assistant."}, developerMsg.Content)
+	require.Equal(t, aigwopenai.ChatMessageRoleDeveloper, developerMsg.Role)
+	require.Equal(t, openai.ChatCompletionSystemMessageParamContentUnion{OfString: openai.Opt("You are a helpful assistant.")}, developerMsg.Content)
 }
 
 // TestProcessStopToStringPointers tests the ProcessStopToStringPointers helper function.

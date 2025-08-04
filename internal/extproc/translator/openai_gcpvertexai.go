@@ -9,16 +9,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/openai/openai-go"
 	"io"
 	"strconv"
 
+	"github.com/envoyproxy/ai-gateway/internal/apischema/gcp"
+	openaischema "github.com/envoyproxy/ai-gateway/internal/apischema/openai"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"google.golang.org/genai"
-	"k8s.io/utils/ptr"
-
-	"github.com/envoyproxy/ai-gateway/internal/apischema/gcp"
-	"github.com/envoyproxy/ai-gateway/internal/apischema/openai"
 )
 
 // NewChatCompletionOpenAIToGCPVertexAITranslator implements [Factory] for OpenAI to GCP Gemini translation.
@@ -35,7 +34,7 @@ type openAIToGCPVertexAITranslatorV1ChatCompletion struct {
 
 // RequestBody implements [Translator.RequestBody] for GCP Gemini.
 // This method translates an OpenAI ChatCompletion request to a GCP Gemini API request.
-func (o *openAIToGCPVertexAITranslatorV1ChatCompletion) RequestBody(_ []byte, openAIReq *openai.ChatCompletionRequest, _ bool) (
+func (o *openAIToGCPVertexAITranslatorV1ChatCompletion) RequestBody(_ []byte, openAIReq *openaischema.ChatCompletionRequest, _ bool) (
 	headerMutation *extprocv3.HeaderMutation, bodyMutation *extprocv3.BodyMutation, err error,
 ) {
 	modelName := openAIReq.Model
@@ -216,21 +215,21 @@ func (o *openAIToGCPVertexAITranslatorV1ChatCompletion) parseGCPStreamingChunks(
 }
 
 // convertGCPChunkToOpenAI converts a GCP streaming chunk to OpenAI streaming format.
-func (o *openAIToGCPVertexAITranslatorV1ChatCompletion) convertGCPChunkToOpenAI(chunk genai.GenerateContentResponse) openai.ChatCompletionResponseChunk {
+func (o *openAIToGCPVertexAITranslatorV1ChatCompletion) convertGCPChunkToOpenAI(chunk genai.GenerateContentResponse) openai.ChatCompletionChunk {
 	// Convert candidates to OpenAI choices for streaming.
 	choices, err := geminiCandidatesToOpenAIStreamingChoices(chunk.Candidates)
 	if err != nil {
 		// For now, create empty choices on error to prevent breaking the stream.
-		choices = []openai.ChatCompletionResponseChunkChoice{}
+		choices = []openai.ChatCompletionChunkChoice{}
 	}
 
 	// Convert usage to pointer if available.
-	var usage *openai.ChatCompletionResponseUsage
+	var usage openai.CompletionUsage
 	if chunk.UsageMetadata != nil {
-		usage = ptr.To(geminiUsageToOpenAIUsage(chunk.UsageMetadata))
+		usage = geminiUsageToOpenAIUsage(chunk.UsageMetadata)
 	}
 
-	return openai.ChatCompletionResponseChunk{
+	return openai.ChatCompletionChunk{
 		Object:  "chat.completion.chunk",
 		Choices: choices,
 		Usage:   usage,
@@ -238,7 +237,7 @@ func (o *openAIToGCPVertexAITranslatorV1ChatCompletion) convertGCPChunkToOpenAI(
 }
 
 // openAIMessageToGeminiMessage converts an OpenAI ChatCompletionRequest to a GCP Gemini GenerateContentRequest.
-func (o *openAIToGCPVertexAITranslatorV1ChatCompletion) openAIMessageToGeminiMessage(openAIReq *openai.ChatCompletionRequest) (*gcp.GenerateContentRequest, error) {
+func (o *openAIToGCPVertexAITranslatorV1ChatCompletion) openAIMessageToGeminiMessage(openAIReq *openaischema.ChatCompletionRequest) (*gcp.GenerateContentRequest, error) {
 	// Convert OpenAI messages to Gemini Contents and SystemInstruction.
 	contents, systemInstruction, err := openAIMessagesToGeminiContents(openAIReq.Messages)
 	if err != nil {
@@ -281,7 +280,7 @@ func (o *openAIToGCPVertexAITranslatorV1ChatCompletion) openAIMessageToGeminiMes
 // applyVendorSpecificFields applies GCP Vertex AI vendor-specific fields to the Gemini request.
 // These fields allow users to access advanced GCP-specific features not available in the OpenAI API.
 // Vendor fields override any conflicting fields that were set during the standard translation process.
-func (o *openAIToGCPVertexAITranslatorV1ChatCompletion) applyVendorSpecificFields(openAIReq *openai.ChatCompletionRequest, gcr *gcp.GenerateContentRequest) {
+func (o *openAIToGCPVertexAITranslatorV1ChatCompletion) applyVendorSpecificFields(openAIReq *openaischema.ChatCompletionRequest, gcr *gcp.GenerateContentRequest) {
 	// Early return if no vendor fields are specified.
 	if openAIReq.GCPVertexAIVendorFields == nil {
 		return
@@ -299,15 +298,15 @@ func (o *openAIToGCPVertexAITranslatorV1ChatCompletion) applyVendorSpecificField
 	}
 }
 
-func (o *openAIToGCPVertexAITranslatorV1ChatCompletion) geminiResponseToOpenAIMessage(gcr genai.GenerateContentResponse) (openai.ChatCompletionResponse, error) {
+func (o *openAIToGCPVertexAITranslatorV1ChatCompletion) geminiResponseToOpenAIMessage(gcr genai.GenerateContentResponse) (openaischema.ChatCompletionResponse, error) {
 	// Convert candidates to OpenAI choices.
 	choices, err := geminiCandidatesToOpenAIChoices(gcr.Candidates)
 	if err != nil {
-		return openai.ChatCompletionResponse{}, fmt.Errorf("error converting choices: %w", err)
+		return openaischema.ChatCompletionResponse{}, fmt.Errorf("error converting choices: %w", err)
 	}
 
 	// Set up the OpenAI response.
-	openaiResp := openai.ChatCompletionResponse{
+	openaiResp := openaischema.ChatCompletionResponse{
 		Choices: choices,
 		Object:  "chat.completion",
 		Usage:   geminiUsageToOpenAIUsage(gcr.UsageMetadata),

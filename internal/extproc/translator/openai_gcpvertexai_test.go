@@ -8,6 +8,7 @@ package translator
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/openai/openai-go"
 	"strings"
 	"testing"
 
@@ -20,7 +21,7 @@ import (
 	"google.golang.org/genai"
 	"k8s.io/utils/ptr"
 
-	"github.com/envoyproxy/ai-gateway/internal/apischema/openai"
+	openaischema "github.com/envoyproxy/ai-gateway/internal/apischema/openai"
 )
 
 func TestOpenAIToGCPVertexAITranslatorV1ChatCompletion_RequestBody(t *testing.T) {
@@ -134,7 +135,7 @@ func TestOpenAIToGCPVertexAITranslatorV1ChatCompletion_RequestBody(t *testing.T)
 	tests := []struct {
 		name              string
 		modelNameOverride string
-		input             openai.ChatCompletionRequest
+		input             openaischema.ChatCompletionRequest
 		onRetry           bool
 		wantError         bool
 		wantHeaderMut     *extprocv3.HeaderMutation
@@ -142,25 +143,23 @@ func TestOpenAIToGCPVertexAITranslatorV1ChatCompletion_RequestBody(t *testing.T)
 	}{
 		{
 			name: "basic request",
-			input: openai.ChatCompletionRequest{
+			input: openaischema.ChatCompletionRequest{
 				Stream: false,
 				Model:  "gemini-pro",
 				Messages: []openai.ChatCompletionMessageParamUnion{
 					{
-						Value: openai.ChatCompletionSystemMessageParam{
-							Content: openai.StringOrArray{
-								Value: "You are a helpful assistant",
+						OfSystem: &openai.ChatCompletionSystemMessageParam{
+							Content: openai.ChatCompletionSystemMessageParamContentUnion{
+								OfString: openai.Opt("You are a helpful assistant"),
 							},
 						},
-						Type: openai.ChatMessageRoleSystem,
 					},
 					{
-						Value: openai.ChatCompletionUserMessageParam{
-							Content: openai.StringOrUserRoleContentUnion{
-								Value: "Tell me about AI Gateways",
+						OfUser: &openai.ChatCompletionUserMessageParam{
+							Content: openai.ChatCompletionUserMessageParamContentUnion{
+								OfString: openai.Opt("Tell me about AI Gateways"),
 							},
 						},
-						Type: openai.ChatMessageRoleUser,
 					},
 				},
 			},
@@ -191,25 +190,23 @@ func TestOpenAIToGCPVertexAITranslatorV1ChatCompletion_RequestBody(t *testing.T)
 		},
 		{
 			name: "basic request with streaming",
-			input: openai.ChatCompletionRequest{
+			input: openaischema.ChatCompletionRequest{
 				Stream: true,
 				Model:  "gemini-pro",
 				Messages: []openai.ChatCompletionMessageParamUnion{
 					{
-						Value: openai.ChatCompletionSystemMessageParam{
-							Content: openai.StringOrArray{
-								Value: "You are a helpful assistant",
+						OfSystem: &openai.ChatCompletionSystemMessageParam{
+							Content: openai.ChatCompletionSystemMessageParamContentUnion{
+								OfString: openai.Opt("You are a helpful assistant"),
 							},
 						},
-						Type: openai.ChatMessageRoleSystem,
 					},
 					{
-						Value: openai.ChatCompletionUserMessageParam{
-							Content: openai.StringOrUserRoleContentUnion{
-								Value: "Tell me about AI Gateways",
+						OfUser: &openai.ChatCompletionUserMessageParam{
+							Content: openai.ChatCompletionUserMessageParamContentUnion{
+								OfString: openai.Opt("Tell me about AI Gateways"),
 							},
 						},
-						Type: openai.ChatMessageRoleUser,
 					},
 				},
 			},
@@ -241,25 +238,23 @@ func TestOpenAIToGCPVertexAITranslatorV1ChatCompletion_RequestBody(t *testing.T)
 		{
 			name:              "model name override",
 			modelNameOverride: "gemini-flash",
-			input: openai.ChatCompletionRequest{
+			input: openaischema.ChatCompletionRequest{
 				Stream: false,
 				Model:  "gemini-pro",
 				Messages: []openai.ChatCompletionMessageParamUnion{
 					{
-						Value: openai.ChatCompletionSystemMessageParam{
-							Content: openai.StringOrArray{
-								Value: "You are a helpful assistant",
+						OfSystem: &openai.ChatCompletionSystemMessageParam{
+							Content: openai.ChatCompletionSystemMessageParamContentUnion{
+								OfString: openai.Opt("You are a helpful assistant"),
 							},
 						},
-						Type: openai.ChatMessageRoleSystem,
 					},
 					{
-						Value: openai.ChatCompletionUserMessageParam{
-							Content: openai.StringOrUserRoleContentUnion{
-								Value: "Tell me about AI Gateways",
+						OfUser: &openai.ChatCompletionUserMessageParam{
+							Content: openai.ChatCompletionUserMessageParamContentUnion{
+								OfString: openai.Opt("Tell me about AI Gateways"),
 							},
 						},
-						Type: openai.ChatMessageRoleUser,
 					},
 				},
 			},
@@ -290,33 +285,31 @@ func TestOpenAIToGCPVertexAITranslatorV1ChatCompletion_RequestBody(t *testing.T)
 		},
 		{
 			name: "request with tools",
-			input: openai.ChatCompletionRequest{
+			input: openaischema.ChatCompletionRequest{
 				Stream: false,
 				Model:  "gemini-pro",
 				Messages: []openai.ChatCompletionMessageParamUnion{
 					{
-						Value: openai.ChatCompletionSystemMessageParam{
-							Content: openai.StringOrArray{
-								Value: "You are a helpful assistant",
+						OfSystem: &openai.ChatCompletionSystemMessageParam{
+							Content: openai.ChatCompletionSystemMessageParamContentUnion{
+								OfString: openai.Opt("You are a helpful assistant"),
 							},
 						},
-						Type: openai.ChatMessageRoleSystem,
 					},
 					{
-						Value: openai.ChatCompletionUserMessageParam{
-							Content: openai.StringOrUserRoleContentUnion{
-								Value: "What's the weather in San Francisco?",
+						OfUser: &openai.ChatCompletionUserMessageParam{
+							Content: openai.ChatCompletionUserMessageParamContentUnion{
+								OfString: openai.Opt("What's the weather in San Francisco?"),
 							},
 						},
-						Type: openai.ChatMessageRoleUser,
 					},
 				},
-				Tools: []openai.Tool{
+				Tools: []openai.ChatCompletionToolParam{
 					{
-						Type: openai.ToolTypeFunction,
-						Function: &openai.FunctionDefinition{
+						Type: openaischema.ToolTypeFunction,
+						Function: openai.FunctionDefinitionParam{
 							Name:        "get_weather",
-							Description: "Get the current weather in a given location",
+							Description: openai.Opt("Get the current weather in a given location"),
 							Parameters: map[string]interface{}{
 								"type": "object",
 								"properties": map[string]interface{}{
@@ -361,25 +354,25 @@ func TestOpenAIToGCPVertexAITranslatorV1ChatCompletion_RequestBody(t *testing.T)
 		},
 		{
 			name: "Request with gcp vendor specific fields",
-			input: openai.ChatCompletionRequest{
+			input: openaischema.ChatCompletionRequest{
 				Model:       "gemini-1.5-pro",
 				Temperature: ptr.To(0.7),
 				MaxTokens:   ptr.To(int64(1024)),
 				Messages: []openai.ChatCompletionMessageParamUnion{
 					{
-						Type: openai.ChatMessageRoleUser,
-						Value: openai.ChatCompletionUserMessageParam{
-							Role:    openai.ChatMessageRoleUser,
-							Content: openai.StringOrUserRoleContentUnion{Value: "Test with standard fields"},
+						OfUser: &openai.ChatCompletionUserMessageParam{
+							Role: openaischema.ChatMessageRoleUser,
+							Content: openai.ChatCompletionUserMessageParamContentUnion{
+								OfString: openai.Opt("Test with standard fields")},
 						},
 					},
 				},
-				Tools: []openai.Tool{
+				Tools: []openai.ChatCompletionToolParam{
 					{
-						Type: openai.ToolTypeFunction,
-						Function: &openai.FunctionDefinition{
+						Type: openaischema.ToolTypeFunction,
+						Function: openai.FunctionDefinitionParam{
 							Name:        "test_function",
-							Description: "A test function",
+							Description: openai.Opt("A test function"),
 							Parameters: map[string]interface{}{
 								"type": "object",
 								"properties": map[string]interface{}{
@@ -391,8 +384,8 @@ func TestOpenAIToGCPVertexAITranslatorV1ChatCompletion_RequestBody(t *testing.T)
 						},
 					},
 				},
-				GCPVertexAIVendorFields: &openai.GCPVertexAIVendorFields{
-					GenerationConfig: &openai.GCPVertexAIGenerationConfig{
+				GCPVertexAIVendorFields: &openaischema.GCPVertexAIVendorFields{
+					GenerationConfig: &openaischema.GCPVertexAIGenerationConfig{
 						ThinkingConfig: &genai.GenerationConfigThinkingConfig{
 							IncludeThoughts: true,
 							ThinkingBudget:  ptr.To(int32(1000)),

@@ -14,9 +14,10 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/openai/openai-go"
 	"google.golang.org/genai"
 
-	"github.com/envoyproxy/ai-gateway/internal/apischema/openai"
+	openaischema "github.com/envoyproxy/ai-gateway/internal/apischema/openai"
 )
 
 const (
@@ -40,10 +41,9 @@ func openAIMessagesToGeminiContents(messages []openai.ChatCompletionMessageParam
 	var gcpParts []*genai.Part
 
 	for _, msgUnion := range messages {
-		switch msgUnion.Type {
-		case openai.ChatMessageRoleDeveloper:
-			msg := msgUnion.Value.(openai.ChatCompletionDeveloperMessageParam)
-			inst, err := developerMsgToGeminiParts(msg)
+		switch {
+		case msgUnion.OfDeveloper != nil:
+			inst, err := developerMsgToGeminiParts(msgUnion.OfDeveloper)
 			if err != nil {
 				return nil, nil, fmt.Errorf("error converting developer message: %w", err)
 			}
@@ -53,10 +53,10 @@ func openAIMessagesToGeminiContents(messages []openai.ChatCompletionMessageParam
 				}
 				systemInstruction.Parts = append(systemInstruction.Parts, inst...)
 			}
-		case openai.ChatMessageRoleSystem:
-			msg := msgUnion.Value.(openai.ChatCompletionSystemMessageParam)
-			devMsg := systemMsgToDeveloperMsg(msg)
-			inst, err := developerMsgToGeminiParts(devMsg)
+		case msgUnion.OfSystem != nil:
+			msg := msgUnion.OfSystem
+			devMsg := systemMsgToDeveloperMsg(*msg)
+			inst, err := developerMsgToGeminiParts(&devMsg)
 			if err != nil {
 				return nil, nil, fmt.Errorf("error converting developer message: %w", err)
 			}
@@ -66,28 +66,27 @@ func openAIMessagesToGeminiContents(messages []openai.ChatCompletionMessageParam
 				}
 				systemInstruction.Parts = append(systemInstruction.Parts, inst...)
 			}
-		case openai.ChatMessageRoleUser:
-			msg := msgUnion.Value.(openai.ChatCompletionUserMessageParam)
+		case msgUnion.OfUser != nil:
+			msg := msgUnion.OfUser
 			parts, err := userMsgToGeminiParts(msg)
 			if err != nil {
 				return nil, nil, fmt.Errorf("error converting user message: %w", err)
 			}
 			gcpParts = append(gcpParts, parts...)
-		case openai.ChatMessageRoleTool:
-			msg := msgUnion.Value.(openai.ChatCompletionToolMessageParam)
+		case msgUnion.OfTool != nil:
+			msg := msgUnion.OfTool
 			part, err := toolMsgToGeminiParts(msg, knownToolCalls)
 			if err != nil {
 				return nil, nil, fmt.Errorf("error converting tool message: %w", err)
 			}
 			gcpParts = append(gcpParts, part)
-		case openai.ChatMessageRoleAssistant:
+		case msgUnion.OfAssistant != nil:
 			// Flush any accumulated user/tool parts before assistant.
 			if len(gcpParts) > 0 {
 				gcpContents = append(gcpContents, genai.Content{Role: genai.RoleUser, Parts: gcpParts})
 				gcpParts = nil
 			}
-			msg := msgUnion.Value.(openai.ChatCompletionAssistantMessageParam)
-			assistantParts, toolCalls, err := assistantMsgToGeminiParts(msg)
+			assistantParts, toolCalls, err := assistantMsgToGeminiParts(msgUnion.OfAssistant)
 			if err != nil {
 				return nil, nil, fmt.Errorf("error converting assistant message: %w", err)
 			}
@@ -96,7 +95,7 @@ func openAIMessagesToGeminiContents(messages []openai.ChatCompletionMessageParam
 			}
 			gcpContents = append(gcpContents, genai.Content{Role: genai.RoleModel, Parts: assistantParts})
 		default:
-			return nil, nil, fmt.Errorf("invalid role in message: %s", msgUnion.Type)
+			return nil, nil, fmt.Errorf("invalid role in message: %T", msgUnion.GetRole())
 		}
 	}
 
@@ -108,96 +107,87 @@ func openAIMessagesToGeminiContents(messages []openai.ChatCompletionMessageParam
 }
 
 // developerMsgToGeminiParts converts OpenAI developer message to Gemini Content.
-func developerMsgToGeminiParts(msg openai.ChatCompletionDeveloperMessageParam) ([]*genai.Part, error) {
+func developerMsgToGeminiParts(msg *openai.ChatCompletionDeveloperMessageParam) ([]*genai.Part, error) {
 	var parts []*genai.Part
 
-	switch contentValue := msg.Content.Value.(type) {
-	case string:
-		if contentValue != "" {
-			parts = append(parts, genai.NewPartFromText(contentValue))
+	if msg.Content.OfString.Valid() {
+		if msg.Content.OfString.String() != "" {
+			parts = append(parts, genai.NewPartFromText(msg.Content.OfString.String()))
 		}
-	case []openai.ChatCompletionContentPartTextParam:
-		if len(contentValue) > 0 {
-			for _, textParam := range contentValue {
-				if textParam.Text != "" {
-					parts = append(parts, genai.NewPartFromText(textParam.Text))
-				}
-			}
-		}
-	default:
-		return nil, fmt.Errorf("unsupported content type in developer message: %T", contentValue)
+	}
 
+	for _, textParam := range msg.Content.OfArrayOfContentParts {
+		if textParam.Text != "" {
+			parts = append(parts, genai.NewPartFromText(textParam.Text))
+		}
 	}
 	return parts, nil
 }
 
 // userMsgToGeminiParts converts OpenAI user message to Gemini Parts.
-func userMsgToGeminiParts(msg openai.ChatCompletionUserMessageParam) ([]*genai.Part, error) {
+func userMsgToGeminiParts(msg *openai.ChatCompletionUserMessageParam) ([]*genai.Part, error) {
 	var parts []*genai.Part
-	switch contentValue := msg.Content.Value.(type) {
-	case string:
-		if contentValue != "" {
-			parts = append(parts, genai.NewPartFromText(contentValue))
+	if msg.Content.OfString.Valid() {
+		if msg.Content.OfString.String() != "" {
+			parts = append(parts, genai.NewPartFromText(msg.Content.OfString.String()))
 		}
-	case []openai.ChatCompletionContentPartUserUnionParam:
-		for _, content := range contentValue {
-			switch {
-			case content.TextContent != nil:
-				parts = append(parts, genai.NewPartFromText(content.TextContent.Text))
-			case content.ImageContent != nil:
-				imgURL := content.ImageContent.ImageURL.URL
-				if imgURL == "" {
-					// If image URL is empty, we skip it.
-					continue
-				}
-
-				parsedURL, err := url.Parse(imgURL)
-				if err != nil {
-					return nil, fmt.Errorf("invalid image URL: %w", err)
-				}
-
-				if parsedURL.Scheme == "data" {
-					mimeType, imgBytes, err := parseDataURI(imgURL)
-					if err != nil {
-						return nil, fmt.Errorf("failed to parse data URI: %w", err)
-					}
-					parts = append(parts, genai.NewPartFromBytes(imgBytes, mimeType))
-				} else {
-					// Identify mimeType based in image url.
-					mimeType := mimeTypeImageJPEG // Default to jpeg if unknown.
-					if mt := mime.TypeByExtension(path.Ext(imgURL)); mt != "" {
-						mimeType = mt
-					}
-
-					parts = append(parts, genai.NewPartFromURI(imgURL, mimeType))
-				}
-			case content.InputAudioContent != nil:
-				// Audio content is currently not supported in this implementation.
-				return nil, fmt.Errorf("audio content not supported yet")
-			}
-		}
-	default:
-		return nil, fmt.Errorf("unsupported content type in user message: %T", contentValue)
 	}
+	for _, content := range msg.Content.OfArrayOfContentParts {
+		switch {
+		case content.OfText != nil:
+			parts = append(parts, genai.NewPartFromText(content.OfText.Text))
+		case content.OfImageURL != nil:
+			imgURL := content.OfImageURL.ImageURL.URL
+			if imgURL == "" {
+				// If image URL is empty, we skip it.
+				continue
+			}
+
+			parsedURL, err := url.Parse(imgURL)
+			if err != nil {
+				return nil, fmt.Errorf("invalid image URL: %w", err)
+			}
+
+			if parsedURL.Scheme == "data" {
+				mimeType, imgBytes, err := parseDataURI(imgURL)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse data URI: %w", err)
+				}
+				parts = append(parts, genai.NewPartFromBytes(imgBytes, mimeType))
+			} else {
+				// Identify mimeType based in image url.
+				mimeType := mimeTypeImageJPEG // Default to jpeg if unknown.
+				if mt := mime.TypeByExtension(path.Ext(imgURL)); mt != "" {
+					mimeType = mt
+				}
+
+				parts = append(parts, genai.NewPartFromURI(imgURL, mimeType))
+			}
+		case content.OfInputAudio != nil:
+			// Audio content is currently not supported in this implementation.
+			return nil, fmt.Errorf("audio content not supported yet")
+		}
+	}
+
 	return parts, nil
 }
 
 // toolMsgToGeminiParts converts OpenAI tool message to Gemini Parts.
-func toolMsgToGeminiParts(msg openai.ChatCompletionToolMessageParam, knownToolCalls map[string]string) (*genai.Part, error) {
+func toolMsgToGeminiParts(msg *openai.ChatCompletionToolMessageParam, knownToolCalls map[string]string) (*genai.Part, error) {
 	var part *genai.Part
 	name := knownToolCalls[msg.ToolCallID]
 	funcResponse := ""
-	switch contentValue := msg.Content.Value.(type) {
-	case string:
-		funcResponse = contentValue
-	case []openai.ChatCompletionContentPartTextParam:
-		for _, textParam := range contentValue {
+	switch {
+	case msg.Content.OfString.Valid():
+		funcResponse = msg.Content.OfString.String()
+	case len(msg.Content.OfArrayOfContentParts) > 0:
+		for _, textParam := range msg.Content.OfArrayOfContentParts {
 			if textParam.Text != "" {
 				funcResponse += textParam.Text
 			}
 		}
 	default:
-		return nil, fmt.Errorf("unsupported content type in tool message: %T", contentValue)
+		return nil, fmt.Errorf("unsupported content type in tool message")
 	}
 
 	part = genai.NewPartFromFunctionResponse(name, map[string]any{"output": funcResponse})
@@ -205,7 +195,7 @@ func toolMsgToGeminiParts(msg openai.ChatCompletionToolMessageParam, knownToolCa
 }
 
 // assistantMsgToGeminiParts converts OpenAI assistant message to Gemini Parts and known tool calls.
-func assistantMsgToGeminiParts(msg openai.ChatCompletionAssistantMessageParam) ([]*genai.Part, map[string]string, error) {
+func assistantMsgToGeminiParts(msg *openai.ChatCompletionAssistantMessageParam) ([]*genai.Part, map[string]string, error) {
 	var parts []*genai.Part
 
 	// Handle tool calls in the assistant message.
@@ -220,28 +210,26 @@ func assistantMsgToGeminiParts(msg openai.ChatCompletionAssistantMessageParam) (
 	}
 
 	// Handle content in the assistant message.
-	switch v := msg.Content.Value.(type) {
-	case string:
-		if v != "" {
-			parts = append(parts, genai.NewPartFromText(v))
+	switch {
+	case msg.Content.OfString.Valid():
+		if msg.Content.OfString.String() != "" {
+			parts = append(parts, genai.NewPartFromText(msg.Content.OfString.String()))
 		}
-	case []openai.ChatCompletionAssistantMessageParamContent:
-		for _, contPart := range v {
-			switch contPart.Type {
-			case openai.ChatCompletionAssistantMessageParamContentTypeText:
-				if contPart.Text != nil && *contPart.Text != "" {
-					parts = append(parts, genai.NewPartFromText(*contPart.Text))
+	case len(msg.Content.OfArrayOfContentParts) > 0:
+		for _, contPart := range msg.Content.OfArrayOfContentParts {
+			switch {
+			case contPart.OfText != nil:
+				if contPart.OfText.Text != "" {
+					parts = append(parts, genai.NewPartFromText(contPart.OfText.Text))
 				}
-			case openai.ChatCompletionAssistantMessageParamContentTypeRefusal:
+			case contPart.OfRefusal != nil:
 				// Refusal messages are currently ignored in this implementation.
 			default:
-				return nil, nil, fmt.Errorf("unsupported content type in assistant message: %s", contPart.Type)
+				return nil, nil, fmt.Errorf("unsupported content type in assistant message: %T", contPart.GetType())
 			}
 		}
-	case nil:
-		// No content provided, this is valid.
 	default:
-		return nil, nil, fmt.Errorf("unsupported content type in assistant message: %T", v)
+		return nil, nil, fmt.Errorf("unsupported content type in assistant message")
 	}
 
 	return parts, knownToolCalls, nil
@@ -307,21 +295,19 @@ func assistantMsgToGeminiParts(msg openai.ChatCompletionAssistantMessageParam) (
 //	}
 //
 // ].
-func openAIToolsToGeminiTools(openaiTools []openai.Tool) ([]genai.Tool, error) {
+func openAIToolsToGeminiTools(openaiTools []openai.ChatCompletionToolParam) ([]genai.Tool, error) {
 	if len(openaiTools) == 0 {
 		return nil, nil
 	}
 	var functionDecls []*genai.FunctionDeclaration
 	for _, tool := range openaiTools {
-		if tool.Type == openai.ToolTypeFunction {
-			if tool.Function != nil {
-				functionDecl := &genai.FunctionDeclaration{
-					Name:                 tool.Function.Name,
-					Description:          tool.Function.Description,
-					ParametersJsonSchema: tool.Function.Parameters,
-				}
-				functionDecls = append(functionDecls, functionDecl)
+		if tool.Type == openaischema.ToolTypeFunction {
+			functionDecl := &genai.FunctionDeclaration{
+				Name:                 tool.Function.Name,
+				Description:          tool.Function.Description.Value,
+				ParametersJsonSchema: tool.Function.Parameters,
 			}
+			functionDecls = append(functionDecls, functionDecl)
 		}
 	}
 	if len(functionDecls) == 0 {
@@ -350,13 +336,10 @@ func openAIToolsToGeminiTools(openaiTools []openai.Tool) ([]genai.Tool, error) {
 //	   ]
 //	 }
 //	}
-func openAIToolChoiceToGeminiToolConfig(toolChoice interface{}) (*genai.ToolConfig, error) {
-	if toolChoice == nil {
-		return nil, nil
-	}
-	switch tc := toolChoice.(type) {
-	case string:
-		switch tc {
+func openAIToolChoiceToGeminiToolConfig(toolChoice openai.ChatCompletionToolChoiceOptionUnionParam) (*genai.ToolConfig, error) {
+	switch {
+	case toolChoice.OfAuto.Valid():
+		switch toolChoice.OfAuto.Value {
 		case "auto":
 			return &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{Mode: genai.FunctionCallingConfigModeAuto}}, nil
 		case "none":
@@ -364,13 +347,13 @@ func openAIToolChoiceToGeminiToolConfig(toolChoice interface{}) (*genai.ToolConf
 		case "required":
 			return &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{Mode: genai.FunctionCallingConfigModeAny}}, nil
 		default:
-			return nil, fmt.Errorf("unsupported tool choice: '%s'", tc)
+			return nil, fmt.Errorf("unsupported tool choice: '%s'", toolChoice.OfAuto.Value)
 		}
-	case openai.ToolChoice:
+	case toolChoice.OfChatCompletionNamedToolChoice != nil:
 		return &genai.ToolConfig{
 			FunctionCallingConfig: &genai.FunctionCallingConfig{
 				Mode:                 genai.FunctionCallingConfigModeAny,
-				AllowedFunctionNames: []string{tc.Function.Name},
+				AllowedFunctionNames: []string{toolChoice.OfChatCompletionNamedToolChoice.Function.Name},
 			},
 			RetrievalConfig: nil,
 		}, nil
@@ -380,7 +363,7 @@ func openAIToolChoiceToGeminiToolConfig(toolChoice interface{}) (*genai.ToolConf
 }
 
 // openAIReqToGeminiGenerationConfig converts OpenAI request to Gemini GenerationConfig.
-func openAIReqToGeminiGenerationConfig(openAIReq *openai.ChatCompletionRequest) (*genai.GenerationConfig, error) {
+func openAIReqToGeminiGenerationConfig(openAIReq *openaischema.ChatCompletionRequest) (*genai.GenerationConfig, error) {
 	gc := &genai.GenerationConfig{}
 	if openAIReq.Temperature != nil {
 		f := float32(*openAIReq.Temperature)
@@ -405,27 +388,25 @@ func openAIReqToGeminiGenerationConfig(openAIReq *openai.ChatCompletionRequest) 
 		gc.ResponseLogprobs = *openAIReq.LogProbs
 	}
 
-	if openAIReq.ResponseFormat != nil {
-		switch openAIReq.ResponseFormat.Type {
-		case openai.ChatCompletionResponseFormatTypeText:
-			gc.ResponseMIMEType = mimeTypeTextPlain
-		case openai.ChatCompletionResponseFormatTypeJSONObject:
-			gc.ResponseMIMEType = mimeTypeApplicationJSON
-		case openai.ChatCompletionResponseFormatTypeJSONSchema:
-			var schemaMap map[string]interface{}
+	switch {
+	case openAIReq.ResponseFormat.OfText != nil:
+		gc.ResponseMIMEType = mimeTypeTextPlain
+	case openAIReq.ResponseFormat.OfJSONObject != nil:
+		gc.ResponseMIMEType = mimeTypeApplicationJSON
+	case openAIReq.ResponseFormat.OfJSONSchema != nil:
+		var schemaMap map[string]interface{}
 
-			switch sch := openAIReq.ResponseFormat.JSONSchema.Schema.(type) {
-			case string:
-				if err := json.Unmarshal([]byte(sch), &schemaMap); err != nil {
-					return nil, fmt.Errorf("invalid JSON schema string: %w", err)
-				}
-			case map[string]interface{}:
-				schemaMap = sch
+		switch sch := openAIReq.ResponseFormat.OfJSONSchema.JSONSchema.Schema.(type) {
+		case string:
+			if err := json.Unmarshal([]byte(sch), &schemaMap); err != nil {
+				return nil, fmt.Errorf("invalid JSON schema string: %w", err)
 			}
-
-			gc.ResponseMIMEType = mimeTypeApplicationJSON
-			gc.ResponseJsonSchema = schemaMap
+		case map[string]interface{}:
+			schemaMap = sch
 		}
+
+		gc.ResponseMIMEType = mimeTypeApplicationJSON
+		gc.ResponseJsonSchema = schemaMap
 	}
 
 	if openAIReq.N != nil {
@@ -461,8 +442,8 @@ func openAIReqToGeminiGenerationConfig(openAIReq *openai.ChatCompletionRequest) 
 // --------------------------------------------------------------.
 
 // geminiCandidatesToOpenAIChoices converts Gemini candidates to OpenAI choices.
-func geminiCandidatesToOpenAIChoices(candidates []*genai.Candidate) ([]openai.ChatCompletionResponseChoice, error) {
-	choices := make([]openai.ChatCompletionResponseChoice, 0, len(candidates))
+func geminiCandidatesToOpenAIChoices(candidates []*genai.Candidate) ([]openai.ChatCompletionChoice, error) {
+	choices := make([]openai.ChatCompletionChoice, 0, len(candidates))
 
 	for idx, candidate := range candidates {
 		if candidate == nil {
@@ -470,18 +451,18 @@ func geminiCandidatesToOpenAIChoices(candidates []*genai.Candidate) ([]openai.Ch
 		}
 
 		// Create the choice.
-		choice := openai.ChatCompletionResponseChoice{
+		choice := openai.ChatCompletionChoice{
 			Index:        int64(idx),
 			FinishReason: geminiFinishReasonToOpenAI(candidate.FinishReason),
 		}
 
 		if candidate.Content != nil {
-			message := openai.ChatCompletionResponseChoiceMessage{
-				Role: openai.ChatMessageRoleAssistant,
+			message := openai.ChatCompletionMessage{
+				Role: openaischema.ChatMessageRoleAssistant,
 			}
 			// Extract text from parts.
 			content := extractTextFromGeminiParts(candidate.Content.Parts)
-			message.Content = &content
+			message.Content = content
 
 			// Extract tool calls if any.
 			toolCalls, err := extractToolCallsFromGeminiParts(candidate.Content.Parts)
@@ -489,12 +470,6 @@ func geminiCandidatesToOpenAIChoices(candidates []*genai.Candidate) ([]openai.Ch
 				return nil, fmt.Errorf("error extracting tool calls: %w", err)
 			}
 			message.ToolCalls = toolCalls
-
-			// If there's no content but there are tool calls, set content to nil.
-			if content == "" && len(toolCalls) > 0 {
-				message.Content = nil
-			}
-
 			choice.Message = message
 		}
 
@@ -510,18 +485,18 @@ func geminiCandidatesToOpenAIChoices(candidates []*genai.Candidate) ([]openai.Ch
 }
 
 // geminiFinishReasonToOpenAI converts Gemini finish reason to OpenAI finish reason.
-func geminiFinishReasonToOpenAI(reason genai.FinishReason) openai.ChatCompletionChoicesFinishReason {
+func geminiFinishReasonToOpenAI(reason genai.FinishReason) string {
 	switch reason {
 	case genai.FinishReasonStop:
-		return openai.ChatCompletionChoicesFinishReasonStop
+		return string(openaischema.ChatCompletionChoicesFinishReasonStop)
 	case genai.FinishReasonMaxTokens:
-		return openai.ChatCompletionChoicesFinishReasonLength
+		return string(openaischema.ChatCompletionChoicesFinishReasonLength)
 	case "":
 		// For intermediate chunks in a streaming response, the finish reason is an empty string.
 		// This is normal behavior and should not be treated as an error.
 		return ""
 	default:
-		return openai.ChatCompletionChoicesFinishReasonContentFilter
+		return string(openaischema.ChatCompletionChoicesFinishReasonContentFilter)
 	}
 }
 
@@ -537,8 +512,8 @@ func extractTextFromGeminiParts(parts []*genai.Part) string {
 }
 
 // extractToolCallsFromGeminiParts extracts tool calls from Gemini parts.
-func extractToolCallsFromGeminiParts(parts []*genai.Part) ([]openai.ChatCompletionMessageToolCallParam, error) {
-	var toolCalls []openai.ChatCompletionMessageToolCallParam
+func extractToolCallsFromGeminiParts(parts []*genai.Part) ([]openai.ChatCompletionMessageToolCall, error) {
+	var toolCalls []openai.ChatCompletionMessageToolCall
 
 	for _, part := range parts {
 		if part == nil || part.FunctionCall == nil {
@@ -554,10 +529,10 @@ func extractToolCallsFromGeminiParts(parts []*genai.Part) ([]openai.ChatCompleti
 		// Generate a random ID for the tool call.
 		toolCallID := uuid.New().String()
 
-		toolCall := openai.ChatCompletionMessageToolCallParam{
+		toolCall := openai.ChatCompletionMessageToolCall{
 			ID:   toolCallID,
 			Type: "function",
-			Function: openai.ChatCompletionMessageToolCallFunctionParam{
+			Function: openai.ChatCompletionMessageToolCallFunction{
 				Name:      part.FunctionCall.Name,
 				Arguments: string(args),
 			},
@@ -574,22 +549,27 @@ func extractToolCallsFromGeminiParts(parts []*genai.Part) ([]openai.ChatCompleti
 }
 
 // geminiUsageToOpenAIUsage converts Gemini usage metadata to OpenAI usage.
-func geminiUsageToOpenAIUsage(metadata *genai.GenerateContentResponseUsageMetadata) openai.ChatCompletionResponseUsage {
+func geminiUsageToOpenAIUsage(metadata *genai.GenerateContentResponseUsageMetadata) openai.CompletionUsage {
 	if metadata == nil {
-		return openai.ChatCompletionResponseUsage{}
+		return openai.CompletionUsage{}
 	}
-
-	return openai.ChatCompletionResponseUsage{
-		CompletionTokens: int(metadata.CandidatesTokenCount),
-		PromptTokens:     int(metadata.PromptTokenCount),
-		TotalTokens:      int(metadata.TotalTokenCount),
+	return openai.CompletionUsage{
+		CompletionTokens: int64(metadata.CandidatesTokenCount),
+		PromptTokens:     int64(metadata.PromptTokenCount),
+		TotalTokens:      int64(metadata.TotalTokenCount),
+		PromptTokensDetails: openai.CompletionUsagePromptTokensDetails{
+			CachedTokens: int64(metadata.CachedContentTokenCount),
+		},
+		CompletionTokensDetails: openai.CompletionUsageCompletionTokensDetails{
+			ReasoningTokens: int64(metadata.ThoughtsTokenCount),
+		},
 	}
 }
 
 // geminiLogprobsToOpenAILogprobs converts Gemini logprobs to OpenAI logprobs.
-func geminiLogprobsToOpenAILogprobs(logprobsResult genai.LogprobsResult) openai.ChatCompletionChoicesLogprobs {
+func geminiLogprobsToOpenAILogprobs(logprobsResult genai.LogprobsResult) openai.ChatCompletionChoiceLogprobs {
 	if len(logprobsResult.ChosenCandidates) == 0 {
-		return openai.ChatCompletionChoicesLogprobs{}
+		return openai.ChatCompletionChoiceLogprobs{}
 	}
 
 	content := make([]openai.ChatCompletionTokenLogprob, 0, len(logprobsResult.ChosenCandidates))
@@ -624,7 +604,7 @@ func geminiLogprobsToOpenAILogprobs(logprobsResult genai.LogprobsResult) openai.
 	}
 
 	// Return the logprobs.
-	return openai.ChatCompletionChoicesLogprobs{
+	return openai.ChatCompletionChoiceLogprobs{
 		Content: content,
 	}
 }
@@ -640,8 +620,8 @@ func buildGCPModelPathSuffix(publisher, model, gcpMethod string, queryParams ...
 }
 
 // geminiCandidatesToOpenAIStreamingChoices converts Gemini candidates to OpenAI streaming choices.
-func geminiCandidatesToOpenAIStreamingChoices(candidates []*genai.Candidate) ([]openai.ChatCompletionResponseChunkChoice, error) {
-	choices := make([]openai.ChatCompletionResponseChunkChoice, 0, len(candidates))
+func geminiCandidatesToOpenAIStreamingChoices(candidates []*genai.Candidate) ([]openai.ChatCompletionChunkChoice, error) {
+	choices := make([]openai.ChatCompletionChunkChoice, 0, len(candidates))
 
 	for _, candidate := range candidates {
 		if candidate == nil {
@@ -649,27 +629,25 @@ func geminiCandidatesToOpenAIStreamingChoices(candidates []*genai.Candidate) ([]
 		}
 
 		// Create the streaming choice.
-		choice := openai.ChatCompletionResponseChunkChoice{
+		choice := openai.ChatCompletionChunkChoice{
 			FinishReason: geminiFinishReasonToOpenAI(candidate.FinishReason),
 		}
 
 		if candidate.Content != nil {
-			delta := &openai.ChatCompletionResponseChunkChoiceDelta{
-				Role: openai.ChatMessageRoleAssistant,
+			delta := openai.ChatCompletionChunkChoiceDelta{
+				Role: openaischema.ChatMessageRoleAssistant,
 			}
 
 			// Extract text from parts for streaming (delta).
-			content := extractTextFromGeminiParts(candidate.Content.Parts)
-			if content != "" {
-				delta.Content = &content
-			}
+			delta.Content = extractTextFromGeminiParts(candidate.Content.Parts)
 
 			// Extract tool calls if any.
-			toolCalls, err := extractToolCallsFromGeminiParts(candidate.Content.Parts)
+			_, err := extractToolCallsFromGeminiParts(candidate.Content.Parts)
 			if err != nil {
 				return nil, fmt.Errorf("error extracting tool calls: %w", err)
 			}
-			delta.ToolCalls = toolCalls
+			// @TODO
+			// delta.ToolCalls = toolCalls
 
 			choice.Delta = delta
 		}

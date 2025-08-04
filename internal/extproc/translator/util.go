@@ -8,13 +8,14 @@ package translator
 import (
 	"encoding/base64"
 	"fmt"
+	"github.com/openai/openai-go"
 	"regexp"
 	"strconv"
 
 	"github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	"github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 
-	"github.com/envoyproxy/ai-gateway/internal/apischema/openai"
+	openaischema "github.com/envoyproxy/ai-gateway/internal/apischema/openai"
 )
 
 const (
@@ -87,14 +88,17 @@ func buildRequestMutations(path string, reqBody []byte) (*ext_procv3.HeaderMutat
 	return headerMutation, bodyMutation
 }
 
-// systemMsgToDeveloperMsg converts OpenAI system message to developer message.
+// systemMsgToDeveloperMsg converts OpenAI system message to a developer message.
 // Since systemMsg is deprecated, this function is provided to maintain backward compatibility.
 func systemMsgToDeveloperMsg(msg openai.ChatCompletionSystemMessageParam) openai.ChatCompletionDeveloperMessageParam {
-	// Convert OpenAI system message to developer message.
+	// Convert OpenAI system message to a developer message.
 	return openai.ChatCompletionDeveloperMessageParam{
-		Name:    msg.Name,
-		Role:    openai.ChatMessageRoleDeveloper,
-		Content: msg.Content,
+		Name: msg.Name,
+		Role: openaischema.ChatMessageRoleDeveloper,
+		Content: openai.ChatCompletionDeveloperMessageParamContentUnion{
+			OfString:              msg.Content.OfString,
+			OfArrayOfContentParts: msg.Content.OfArrayOfContentParts,
+		},
 	}
 }
 

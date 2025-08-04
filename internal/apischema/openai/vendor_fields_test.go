@@ -12,6 +12,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/openai/openai-go"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genai"
 	"k8s.io/utils/ptr"
@@ -43,12 +44,13 @@ func TestChatCompletionRequest_VendorFieldsExtraction(t *testing.T) {
 			}`),
 			expected: &ChatCompletionRequest{
 				Model: "gemini-1.5-pro",
-				Messages: []ChatCompletionMessageParamUnion{
+				Messages: []openai.ChatCompletionMessageParamUnion{
 					{
-						Type: ChatMessageRoleUser,
-						Value: ChatCompletionUserMessageParam{
-							Role:    ChatMessageRoleUser,
-							Content: StringOrUserRoleContentUnion{Value: "Hello, world!"},
+						OfUser: &openai.ChatCompletionUserMessageParam{
+							Role: ChatMessageRoleUser,
+							Content: openai.ChatCompletionUserMessageParamContentUnion{
+								OfString: openai.Opt("Hello, world!"),
+							},
 						},
 					},
 				},
@@ -85,12 +87,13 @@ func TestChatCompletionRequest_VendorFieldsExtraction(t *testing.T) {
 			}`),
 			expected: &ChatCompletionRequest{
 				Model: "claude-3",
-				Messages: []ChatCompletionMessageParamUnion{
+				Messages: []openai.ChatCompletionMessageParamUnion{
 					{
-						Type: ChatMessageRoleUser,
-						Value: ChatCompletionUserMessageParam{
-							Role:    ChatMessageRoleUser,
-							Content: StringOrUserRoleContentUnion{Value: "Multiple vendors test"},
+						OfUser: &openai.ChatCompletionUserMessageParam{
+							Role: ChatMessageRoleUser,
+							Content: openai.ChatCompletionUserMessageParamContentUnion{
+								OfString: openai.Opt("Multiple vendors test"),
+							},
 						},
 					},
 				},
@@ -125,12 +128,13 @@ func TestChatCompletionRequest_VendorFieldsExtraction(t *testing.T) {
 			}`),
 			expected: &ChatCompletionRequest{
 				Model: "gpt-4",
-				Messages: []ChatCompletionMessageParamUnion{
+				Messages: []openai.ChatCompletionMessageParamUnion{
 					{
-						Type: ChatMessageRoleUser,
-						Value: ChatCompletionUserMessageParam{
-							Role:    ChatMessageRoleUser,
-							Content: StringOrUserRoleContentUnion{Value: "Standard request"},
+						OfUser: &openai.ChatCompletionUserMessageParam{
+							Role: ChatMessageRoleUser,
+							Content: openai.ChatCompletionUserMessageParamContentUnion{
+								OfString: openai.Opt("Standard request"),
+							},
 						},
 					},
 				},
@@ -149,12 +153,13 @@ func TestChatCompletionRequest_VendorFieldsExtraction(t *testing.T) {
 			}`),
 			expected: &ChatCompletionRequest{
 				Model: "gemini-pro",
-				Messages: []ChatCompletionMessageParamUnion{
+				Messages: []openai.ChatCompletionMessageParamUnion{
 					{
-						Type: ChatMessageRoleUser,
-						Value: ChatCompletionUserMessageParam{
-							Role:    ChatMessageRoleUser,
-							Content: StringOrUserRoleContentUnion{Value: "Empty vendor fields"},
+						OfUser: &openai.ChatCompletionUserMessageParam{
+							Role: ChatMessageRoleUser,
+							Content: openai.ChatCompletionUserMessageParamContentUnion{
+								OfString: openai.Opt("Empty vendor fields"),
+							},
 						},
 					},
 				},
@@ -173,12 +178,13 @@ func TestChatCompletionRequest_VendorFieldsExtraction(t *testing.T) {
 			}`),
 			expected: &ChatCompletionRequest{
 				Model: "gpt-3.5",
-				Messages: []ChatCompletionMessageParamUnion{
+				Messages: []openai.ChatCompletionMessageParamUnion{
 					{
-						Type: ChatMessageRoleUser,
-						Value: ChatCompletionUserMessageParam{
-							Role:    ChatMessageRoleUser,
-							Content: StringOrUserRoleContentUnion{Value: "Null vendor fields"},
+						OfUser: &openai.ChatCompletionUserMessageParam{
+							Role: ChatMessageRoleUser,
+							Content: openai.ChatCompletionUserMessageParamContentUnion{
+								OfString: openai.Opt("Null vendor fields"),
+							},
 						},
 					},
 				},
