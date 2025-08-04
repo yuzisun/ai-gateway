@@ -289,7 +289,7 @@ func TestEmbeddings_ParseBody(t *testing.T) {
 		require.Equal(t, "text-embedding-ada-002", modelName)
 		require.NotNil(t, rb)
 		require.Equal(t, "text-embedding-ada-002", rb.Model)
-		require.Equal(t, "test input", rb.Input.Value)
+		require.Equal(t, "test input", rb.Input.OfString.Value)
 	})
 	t.Run("error", func(t *testing.T) {
 		modelName, rb, err := parseOpenAIEmbeddingBody(&extprocv3.HttpBody{})

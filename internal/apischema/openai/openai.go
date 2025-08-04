@@ -560,7 +560,7 @@ type EmbeddingRequest struct {
 	// The input must not exceed the max input tokens for the model (8192 tokens for text-embedding-ada-002),
 	// cannot be an empty string, and any array must be 2048 dimensions or less.
 	// Docs: https://platform.openai.com/docs/api-reference/embeddings/create#embeddings-create-input
-	// Input StringOrArray `json:"input"`
+	Input openai.EmbeddingNewParamsInputUnion `json:"input"`
 
 	// Model: ID of the model to use.
 	// Docs: https://platform.openai.com/docs/api-reference/embeddings/create#embeddings-create-model
