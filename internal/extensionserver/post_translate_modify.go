@@ -39,8 +39,9 @@ import (
 )
 
 const (
-	extProcUDSClusterName = "ai-gateway-extproc-uds"
-	aiGatewayExtProcName  = "envoy.filters.http.ext_proc/aigateway"
+	extProcUDSClusterName            = "ai-gateway-extproc-uds"
+	aiGatewayExtProcName             = "envoy.filters.http.ext_proc/aigateway"
+	rateLimitFilterMetadataNamespace = "envoy.filters.http.ratelimit"
 )
 
 // PostTranslateModify allows an extension to modify the clusters and secrets in the xDS config
@@ -299,7 +300,10 @@ func (s *Server) maybeModifyCluster(cluster *clusterv3.Cluster) error {
 	extProcConfig := &extprocv3.ExternalProcessor{}
 	extProcConfig.MetadataOptions = &extprocv3.MetadataOptions{
 		ReceivingNamespaces: &extprocv3.MetadataOptions_MetadataNamespaces{
-			Untyped: []string{aigv1a1.AIGatewayFilterMetadataNamespace},
+			Untyped: []string{
+				aigv1a1.AIGatewayFilterMetadataNamespace,
+				rateLimitFilterMetadataNamespace,
+			},
 		},
 	}
 	extProcConfig.AllowModeOverride = true
@@ -644,7 +648,10 @@ func (s *Server) insertRouterLevelAIGatewayExtProc(listener *listenerv3.Listener
 			},
 			MetadataOptions: &extprocv3.MetadataOptions{
 				ReceivingNamespaces: &extprocv3.MetadataOptions_MetadataNamespaces{
-					Untyped: []string{aigv1a1.AIGatewayFilterMetadataNamespace},
+					Untyped: []string{
+						aigv1a1.AIGatewayFilterMetadataNamespace,
+						rateLimitFilterMetadataNamespace,
+					},
 				},
 			},
 			ProcessingMode: &extprocv3.ProcessingMode{
@@ -785,12 +792,11 @@ outer:
 	return nil
 }
 
+// afterExtProcFilterPrefixes defines the filter types that the AI Gateway ext_proc
+// should be inserted BEFORE. By starting from CustomResponse, the AI Gateway ext_proc
+// is inserted AFTER rate limiting filters (LocalRateLimit, RateLimit), ensuring that
+// rate-limited requests don't consume ext_proc resources.
 var afterExtProcFilterPrefixes = []string{
-	egv1a1.EnvoyFilterExtProc.String(),
-	egv1a1.EnvoyFilterWasm.String(),
-	egv1a1.EnvoyFilterRBAC.String(),
-	egv1a1.EnvoyFilterLocalRateLimit.String(),
-	egv1a1.EnvoyFilterRateLimit.String(),
 	egv1a1.EnvoyFilterCustomResponse.String(),
 	egv1a1.EnvoyFilterCredentialInjector.String(),
 	egv1a1.EnvoyFilterCompressor.String(),

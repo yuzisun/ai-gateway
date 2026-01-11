@@ -46,64 +46,64 @@ func TestInsertAIGatewayExtProcFilter(t *testing.T) {
 			expectedFilterCount: 3,
 		},
 		{
-			name: "insert before extproc filter",
+			name: "insert after extproc filter (before router)",
 			existingFilters: []*httpconnectionmanagerv3.HttpFilter{
 				{Name: "envoy.filters.http.fault"},
 				{Name: "envoy.filters.http.ext_proc.existing"},
 				{Name: "envoy.filters.http.router"},
 			},
-			expectedPosition:    1,
+			expectedPosition:    2,
 			expectedFilterCount: 4,
 		},
 		{
-			name: "insert before multiple extproc filter",
+			name: "insert after multiple extproc filter (before router)",
 			existingFilters: []*httpconnectionmanagerv3.HttpFilter{
 				{Name: "envoy.filters.http.fault"},
 				{Name: "envoy.filters.http.ext_proc.existing"},
 				{Name: "envoy.filters.http.ext_proc.existing.another"},
 				{Name: "envoy.filters.http.router"},
 			},
-			expectedPosition:    1,
+			expectedPosition:    3,
 			expectedFilterCount: 5,
 		},
 		{
-			name: "insert before wasm filter",
+			name: "insert after wasm filter (before router)",
 			existingFilters: []*httpconnectionmanagerv3.HttpFilter{
 				{Name: "envoy.filters.http.fault"},
 				{Name: "envoy.filters.http.wasm"},
 				{Name: "envoy.filters.http.router"},
 			},
-			expectedPosition:    1,
+			expectedPosition:    2,
 			expectedFilterCount: 4,
 		},
 		{
-			name: "insert before rbac filter",
+			name: "insert after rbac filter (before router)",
 			existingFilters: []*httpconnectionmanagerv3.HttpFilter{
 				{Name: "envoy.filters.http.fault"},
 				{Name: "envoy.filters.http.rbac"},
 				{Name: "envoy.filters.http.router"},
 			},
-			expectedPosition:    1,
+			expectedPosition:    2,
 			expectedFilterCount: 4,
 		},
 		{
-			name: "insert before local_ratelimit filter",
+			name: "insert after local_ratelimit filter (before router)",
 			existingFilters: []*httpconnectionmanagerv3.HttpFilter{
 				{Name: "envoy.filters.http.fault"},
 				{Name: "envoy.filters.http.local_ratelimit"},
 				{Name: "envoy.filters.http.router"},
 			},
-			expectedPosition:    1,
+			expectedPosition:    2,
 			expectedFilterCount: 4,
 		},
 		{
-			name: "insert before ratelimit filter",
+			name: "insert after ratelimit filter (before router)",
 			existingFilters: []*httpconnectionmanagerv3.HttpFilter{
 				{Name: "envoy.filters.http.fault"},
 				{Name: "envoy.filters.http.ratelimit"},
 				{Name: "envoy.filters.http.router"},
 			},
-			expectedPosition:    1,
+			expectedPosition:    2,
 			expectedFilterCount: 4,
 		},
 		{
@@ -147,7 +147,7 @@ func TestInsertAIGatewayExtProcFilter(t *testing.T) {
 			expectedFilterCount: 4,
 		},
 		{
-			name: "insert with multiple filters requiring ordering",
+			name: "insert after multiple filters (after rbac, before router)",
 			existingFilters: []*httpconnectionmanagerv3.HttpFilter{
 				{Name: "envoy.filters.http.fault"},
 				{Name: "envoy.filters.http.cors"},
@@ -155,7 +155,7 @@ func TestInsertAIGatewayExtProcFilter(t *testing.T) {
 				{Name: "envoy.filters.http.rbac"},
 				{Name: "envoy.filters.http.router"},
 			},
-			expectedPosition:    2,
+			expectedPosition:    4,
 			expectedFilterCount: 6,
 		},
 	}
