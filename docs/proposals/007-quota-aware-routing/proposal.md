@@ -239,7 +239,7 @@ func (p *UpstreamProcessor) signalFallbackToNextBackend(backend *Backend, status
         Response: &extprocv3.ProcessingResponse_ImmediateResponse{
             ImmediateResponse: &extprocv3.ImmediateResponse{
                 Status: &typev3.HttpStatus{
-                    Code: typev3.StatusCode_ServiceUnavailable, // 503 or custom 529
+                    Code: typev3.StatusCode_ServiceUnavailable, // 429 or custom 529
                 },
                 Headers: &extprocv3.HeaderMutation{
                     SetHeaders: []*corev3.HeaderValueOption{
@@ -347,7 +347,7 @@ This maps naturally to PT (priority 0) vs On-Demand (priority 1) routing.
 2. **Priority 1 (fallback)**: On-demand backends (always available)
 
 Envoy selects backends from priority 0 first. When:
-- All priority 0 backends return retriable errors (quota exceeded → 503)
+- All priority 0 backends return retriable errors (quota exceeded → 429)
 - The `previous_priorities` retry predicate marks priority 0 as exhausted
 
 Envoy automatically fails over to priority 1 backends.
@@ -449,7 +449,8 @@ spec:
       - "retriable-status-codes"
       - "5xx"
     retriableStatusCodes:
-      - 503  # Returned by ext_proc when quota exceeded
+      - 503
+      - 429 # Returned by ext_proc when quota exceeded
     perTryTimeout: 30s
 
     # Skip hosts that were already attempted
@@ -471,11 +472,11 @@ spec:
 
 1. **Initial Request**: LB selects host from priority 0 (e.g., `aws-claude-pt-us-east-1`)
 2. **Quota Check**: Upstream ext_proc checks quota → exceeded
-3. **503 Response**: Ext_proc returns immediate 503 response
+3. **429 Response**: Ext_proc returns immediate 429 response
 4. **First Retry**:
    - `previous_hosts` predicate rejects `aws-claude-pt-us-east-1`
    - LB selects another priority 0 host (e.g., `aws-claude-pt-us-west-2`)
-5. **Quota Check Again**: Also exceeded → 503
+5. **Quota Check Again**: Also exceeded → 429
 6. **Second Retry**:
    - `previous_hosts` rejects both attempted hosts
    - No more hosts in priority 0 available
@@ -558,7 +559,7 @@ descriptors:
    │                │                │                   │ OVER_LIMIT        │                   │
    │                │                │                   │<──────────────────│                   │
    │                │                │                   │                   │                   │
-   │                │                │ 503 Response      │                   │                   │
+   │                │                │ 429 Response      │                   │                   │
    │                │                │<──────────────────│                   │                   │
    │                │                │                   │                   │                   │
    │                │                │ Retry #1:         │                   │                   │
@@ -574,7 +575,7 @@ descriptors:
    │                │                │                   │ OVER_LIMIT        │                   │
    │                │                │                   │<──────────────────│                   │
    │                │                │                   │                   │                   │
-   │                │                │ 503 Response      │                   │                   │
+   │                │                │ 429 Response      │                   │                   │
    │                │                │<──────────────────│                   │                   │
    │                │                │                   │                   │                   │
    │                │                │ Retry #2:         │                   │                   │
@@ -645,7 +646,7 @@ var (
 
 ### 1: Quota Check in Upstream ExtProc
 - Parse quota mode dynamic metadata set by the rate limit filter (soft limit exceeded vs. hard limit)
-- Return immediate 503 response when quota exceeded to trigger retry
+- Return immediate 429 response when quota exceeded to trigger retry
 - Record quota check metrics per backend
 
 ### 2: Retry Policy Configuration
@@ -653,7 +654,7 @@ var (
 - Configure `previous_priorities` retry predicate to failover to lower priority levels
 - Set appropriate `hostSelectionRetryMaxAttempts` for host selection within retry
 - Set `numRetries` based on number of backends across all priorities
-- Configure `retriableStatusCodes` to include 503
+- Configure `retriableStatusCodes` to include 429
 
 ### 3: Token-Based Quota Tracking
 - Integrate with quota tracker for token-based limits
