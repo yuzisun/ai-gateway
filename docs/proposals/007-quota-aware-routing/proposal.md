@@ -229,16 +229,42 @@ func (p *UpstreamProcessor) ProcessRequestHeaders(ctx context.Context, headers *
 }
 
 // signalFallbackToNextBackend returns a response that triggers retry to next backend
+// Note: ClearRouteCache does NOT work in upstream filters because the route has already
+// been selected by the Router. Instead, we return a retriable status code (529) to trigger
+// Envoy's retry mechanism which will select a different backend.
 func (p *UpstreamProcessor) signalFallbackToNextBackend(backend *Backend, status *QuotaStatus) (*extprocv3.ProcessingResponse, error) {
-    // Set dynamic metadata to indicate quota exceeded
-    // This metadata is used by retry policy to skip this backend
+    // Return immediate response with retriable status code
+    // This triggers Envoy's retry policy to try the next backend
     return &extprocv3.ProcessingResponse{
-        Response: &extprocv3.ProcessingResponse_RequestHeaders{
-            RequestHeaders: &extprocv3.HeadersResponse{
-                Response: &extprocv3.CommonResponse{
-                    // Clear route cache to allow re-routing
-                    ClearRouteCache: true,
+        Response: &extprocv3.ProcessingResponse_ImmediateResponse{
+            ImmediateResponse: &extprocv3.ImmediateResponse{
+                Status: &typev3.HttpStatus{
+                    Code: typev3.StatusCode_ServiceUnavailable, // 503 or custom 529
                 },
+                Headers: &extprocv3.HeaderMutation{
+                    SetHeaders: []*corev3.HeaderValueOption{
+                        {
+                            Header: &corev3.HeaderValue{
+                                Key:   "x-envoy-retriable-header-names",
+                                Value: "x-quota-exceeded",
+                            },
+                        },
+                        {
+                            Header: &corev3.HeaderValue{
+                                Key:   "x-quota-exceeded",
+                                Value: "true",
+                            },
+                        },
+                        {
+                            Header: &corev3.HeaderValue{
+                                Key:   "x-exceeded-backend",
+                                Value: backend.Name,
+                            },
+                        },
+                    },
+                },
+                Body: []byte(fmt.Sprintf(`{"error": "quota_exceeded", "backend": "%s", "used": %d, "limit": %d}`,
+                    backend.Name, status.Used, status.SoftLimit)),
             },
         },
         DynamicMetadata: &structpb.Struct{
@@ -253,10 +279,6 @@ func (p *UpstreamProcessor) signalFallbackToNextBackend(backend *Backend, status
                     },
                 }),
             },
-        },
-        ModeOverride: &extprocv3.ProcessingMode{
-            // Skip body processing for fallback
-            RequestBodyMode: extprocv3.ProcessingMode_NONE,
         },
     }, nil
 }
@@ -308,45 +330,107 @@ func (p *UpstreamProcessor) checkQuota(ctx context.Context, backend *Backend) (*
 
 ## Fallback Routing Implementation
 
-### Option 1: ExtProc-Driven Fallback with Clear Route Cache
+> **Note:** `ClearRouteCache` does NOT work in upstream filters because by the time
+> the request reaches the upstream filter, the Router has already selected the route
+> and cluster. The route decision is committed before upstream filters execute.
+> Therefore, we use Envoy's **priority-based routing with retry** to achieve fallback.
 
-```go
-// When quota exceeded, clear route cache and set header for next backend selection
-func (p *UpstreamProcessor) triggerFallback(exceededBackend string, priority int) (*extprocv3.ProcessingResponse, error) {
-    return &extprocv3.ProcessingResponse{
-        Response: &extprocv3.ProcessingResponse_RequestHeaders{
-            RequestHeaders: &extprocv3.HeadersResponse{
-                Response: &extprocv3.CommonResponse{
-                    // Clear route cache forces re-evaluation
-                    ClearRouteCache: true,
-                    HeaderMutation: &extprocv3.HeaderMutation{
-                        SetHeaders: []*corev3.HeaderValueOption{
-                            {
-                                Header: &corev3.HeaderValue{
-                                    Key:   "x-ai-skip-backends",
-                                    Value: exceededBackend,
-                                },
-                                AppendAction: corev3.HeaderValueOption_APPEND_IF_EXISTS_OR_ADD,
-                            },
-                            {
-                                Header: &corev3.HeaderValue{
-                                    Key:   "x-ai-fallback-priority",
-                                    Value: strconv.Itoa(priority + 1),
-                                },
-                                AppendAction: corev3.HeaderValueOption_OVERWRITE_IF_EXISTS_OR_ADD,
-                            },
-                        },
-                    },
-                },
-            },
-        },
-    }, nil
-}
+### Priority-Based Backend Configuration
+
+Envoy's load balancer supports **priority levels** for endpoints. When backends at a higher
+priority level fail (or return retriable errors), Envoy can failover to lower priority backends.
+This maps naturally to PT (priority 0) vs On-Demand (priority 1) routing.
+
+#### How Priority-Based Load Balancing Works
+
+1. **Priority 0 (highest)**: PT backends with quota limits
+2. **Priority 1 (fallback)**: On-demand backends (always available)
+
+Envoy selects backends from priority 0 first. When:
+- All priority 0 backends return retriable errors (quota exceeded → 503)
+- The `previous_priorities` retry predicate marks priority 0 as exhausted
+
+Envoy automatically fails over to priority 1 backends.
+
+### Envoy Cluster Configuration with Priority Levels
+
+The cluster endpoints are configured with explicit priority levels. Each backend maps to
+a locality within a priority level:
+
+```yaml
+# Generated Envoy cluster configuration
+cluster:
+  name: "ai-gateway-backends"
+  load_balancing_policy:
+    policies:
+      - typed_extension_config:
+          name: envoy.load_balancing_policies.least_request
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.load_balancing_policies.least_request.v3.LeastRequest
+            locality_lb_config:
+              locality_weighted_lb_config: {}
+
+  load_assignment:
+    cluster_name: "ai-gateway-backends"
+    endpoints:
+      # Priority 0: PT backends (try first)
+      - priority: 0
+        locality:
+          region: "aws-claude-pt-us-east-1"
+        lb_endpoints:
+          - endpoint:
+              address:
+                socket_address:
+                  address: "bedrock.us-east-1.amazonaws.com"
+                  port_value: 443
+            metadata:
+              filter_metadata:
+                aigateway.envoy.io:
+                  backend_name: "aws-claude-pt-us-east-1"
+                  capacity_type: "provisioned"
+            load_balancing_weight: 1
+        load_balancing_weight: 1
+
+      - priority: 0
+        locality:
+          region: "aws-claude-pt-us-west-2"
+        lb_endpoints:
+          - endpoint:
+              address:
+                socket_address:
+                  address: "bedrock.us-west-2.amazonaws.com"
+                  port_value: 443
+            metadata:
+              filter_metadata:
+                aigateway.envoy.io:
+                  backend_name: "aws-claude-pt-us-west-2"
+                  capacity_type: "provisioned"
+            load_balancing_weight: 1
+        load_balancing_weight: 1
+
+      # Priority 1: On-demand backends (fallback)
+      - priority: 1
+        locality:
+          region: "anthropic-claude-ondemand"
+        lb_endpoints:
+          - endpoint:
+              address:
+                socket_address:
+                  address: "api.anthropic.com"
+                  port_value: 443
+            metadata:
+              filter_metadata:
+                aigateway.envoy.io:
+                  backend_name: "anthropic-claude-ondemand"
+                  capacity_type: "on-demand"
+            load_balancing_weight: 1
+        load_balancing_weight: 1
 ```
 
-### Option 2: Envoy Retry Policy with Quota-Based Retry Predicate
+### Retry Policy with Priority Failover
 
-Configure Envoy retry policy to retry on quota exceeded:
+Configure the retry policy to use `previous_priorities` predicate, which tracks failed
+priority levels and skips them on retry:
 
 ```yaml
 apiVersion: gateway.envoyproxy.io/v1alpha1
@@ -363,14 +447,49 @@ spec:
     numRetries: 3
     retryOn:
       - "retriable-status-codes"
+      - "5xx"
     retriableStatusCodes:
-      - 529  # Custom status for "quota exceeded, try next backend"
+      - 503  # Returned by ext_proc when quota exceeded
     perTryTimeout: 30s
 
-    # Retry to different backend (not same one)
+    # Skip hosts that were already attempted
     retryHostPredicate:
       - name: envoy.retry_host_predicates.previous_hosts
+
+    # Skip priority levels where all hosts failed
+    retryPriority:
+      name: envoy.retry_priorities.previous_priorities
+      typedConfig:
+        "@type": type.googleapis.com/envoy.extensions.retry.priority.previous_priorities.v3.PreviousPrioritiesConfig
+        updateFrequency: 2  # Update priority load after every 2 retries
+
+    # Allow multiple host selection attempts within each retry
+    hostSelectionRetryMaxAttempts: 5
 ```
+
+### How Priority Failover Works
+
+1. **Initial Request**: LB selects host from priority 0 (e.g., `aws-claude-pt-us-east-1`)
+2. **Quota Check**: Upstream ext_proc checks quota → exceeded
+3. **503 Response**: Ext_proc returns immediate 503 response
+4. **First Retry**:
+   - `previous_hosts` predicate rejects `aws-claude-pt-us-east-1`
+   - LB selects another priority 0 host (e.g., `aws-claude-pt-us-west-2`)
+5. **Quota Check Again**: Also exceeded → 503
+6. **Second Retry**:
+   - `previous_hosts` rejects both attempted hosts
+   - No more hosts in priority 0 available
+   - `previous_priorities` marks priority 0 as exhausted
+   - LB fails over to priority 1
+7. **Priority 1 Success**: Request goes to `anthropic-claude-ondemand`
+
+### Key Benefits of Priority-Based Approach
+
+1. **Explicit Failover Order**: PT backends always tried before on-demand
+2. **Efficient Skip**: Once a priority is exhausted, entire level is skipped
+3. **Native Envoy Support**: Uses built-in retry predicates, no custom code
+4. **Works with Locality LB**: Compatible with existing locality-weighted config
+5. **Configurable**: Can adjust `updateFrequency` to control failover sensitivity
 
 ## Rate Limit Service Configuration
 
@@ -415,9 +534,11 @@ descriptors:
 
 ## Sequence Diagram
 
+### Priority-Based Failover Flow
+
 ```
 ┌──────┐     ┌─────────────┐     ┌────────┐     ┌──────────────┐     ┌──────────────┐     ┌─────────────┐
-│Client│     │Router ExtProc│    │ Router │     │Upstream ExtProc│   │RateLimit Svc │     │   Backend   │
+│Client│     │Router ExtProc│    │Router/LB│    │Upstream ExtProc│   │RateLimit Svc │     │   Backend   │
 └──┬───┘     └──────┬──────┘     └───┬────┘     └───────┬──────┘     └──────┬───────┘     └──────┬──────┘
    │                │                │                   │                   │                   │
    │ POST /chat     │                │                   │                   │                   │
@@ -426,28 +547,45 @@ descriptors:
    │                │ Set model hdr  │                   │                   │                   │
    │                │───────────────>│                   │                   │                   │
    │                │                │                   │                   │                   │
-   │                │                │ Route to          │                   │                   │
-   │                │                │ Backend-1 cluster │                   │                   │
+   │                │                │ Select Priority 0 │                   │                   │
+   │                │                │ Host: PT-east-1   │                   │                   │
    │                │                │──────────────────>│                   │                   │
    │                │                │                   │                   │                   │
    │                │                │                   │ Check quota       │                   │
-   │                │                │                   │ (backend-1)       │                   │
+   │                │                │                   │ (PT-east-1)       │                   │
    │                │                │                   │──────────────────>│                   │
    │                │                │                   │                   │                   │
    │                │                │                   │ OVER_LIMIT        │                   │
-   │                │                │                   │ (quota mode)      │                   │
    │                │                │                   │<──────────────────│                   │
    │                │                │                   │                   │                   │
-   │                │                │ ClearRouteCache   │                   │                   │
-   │                │                │ + skip backend-1  │                   │                   │
+   │                │                │ 503 Response      │                   │                   │
    │                │                │<──────────────────│                   │                   │
    │                │                │                   │                   │                   │
-   │                │                │ Route to          │                   │                   │
-   │                │                │ Backend-2 cluster │                   │                   │
+   │                │                │ Retry #1:         │                   │                   │
+   │                │                │ previous_hosts    │                   │                   │
+   │                │                │ skips PT-east-1   │                   │                   │
+   │                │                │ Select PT-west-2  │                   │                   │
    │                │                │──────────────────>│                   │                   │
    │                │                │                   │                   │                   │
    │                │                │                   │ Check quota       │                   │
-   │                │                │                   │ (backend-2)       │                   │
+   │                │                │                   │ (PT-west-2)       │                   │
+   │                │                │                   │──────────────────>│                   │
+   │                │                │                   │                   │                   │
+   │                │                │                   │ OVER_LIMIT        │                   │
+   │                │                │                   │<──────────────────│                   │
+   │                │                │                   │                   │                   │
+   │                │                │ 503 Response      │                   │                   │
+   │                │                │<──────────────────│                   │                   │
+   │                │                │                   │                   │                   │
+   │                │                │ Retry #2:         │                   │                   │
+   │                │                │ previous_priorities│                  │                   │
+   │                │                │ marks P0 exhausted│                   │                   │
+   │                │                │ Failover to P1    │                   │                   │
+   │                │                │ Select: On-demand │                   │                   │
+   │                │                │──────────────────>│                   │                   │
+   │                │                │                   │                   │                   │
+   │                │                │                   │ Check quota       │                   │
+   │                │                │                   │ (On-demand)       │                   │
    │                │                │                   │──────────────────>│                   │
    │                │                │                   │                   │                   │
    │                │                │                   │ OK (under limit)  │                   │
@@ -465,6 +603,13 @@ descriptors:
    │<───────────────────────────────────────────────────────────────────────────────────────────│
    │  Response                       │                   │                   │                   │
 ```
+
+### Legend
+
+- **Priority 0 (P0)**: Provisioned Throughput backends (PT-east-1, PT-west-2)
+- **Priority 1 (P1)**: On-demand backends (fallback)
+- **previous_hosts**: Retry predicate that skips already-attempted hosts
+- **previous_priorities**: Retry predicate that skips exhausted priority levels
 
 ## Metrics and Observability
 
@@ -496,27 +641,25 @@ var (
 )
 ```
 
-## Implementation Phases
+## Implementation Items
 
-### Phase 1: Quota Check in Upstream ExtProc
-- Add quota check call to rate limit service in upstream filter
-- Parse quota mode response
-- Record quota metrics
+### 1: Quota Check in Upstream ExtProc
+- Parse quota mode dynamic metadata set by the rate limit filter (soft limit exceeded vs. hard limit)
+- Return immediate 503 response when quota exceeded to trigger retry
+- Record quota check metrics per backend
 
-### Phase 2: Fallback Routing
-- Implement `ClearRouteCache` with skip header
-- Add backend skip logic to router-level ext_proc
-- Track fallback metrics
+### 2: Retry Policy Configuration
+- Configure `previous_hosts` retry predicate to skip already-attempted hosts
+- Configure `previous_priorities` retry predicate to failover to lower priority levels
+- Set appropriate `hostSelectionRetryMaxAttempts` for host selection within retry
+- Set `numRetries` based on number of backends across all priorities
+- Configure `retriableStatusCodes` to include 503
 
-### Phase 3: Priority-Based Backend Selection
-- Support priority ordering in `backendRefs`
-- Implement max fallback attempts
-- Add circuit breaker for repeatedly failing backends
-
-### Phase 4: Token-Based Quota Tracking
+### 3: Token-Based Quota Tracking
 - Integrate with quota tracker for token-based limits
-- Support weighted token calculation
-- Record actual usage post-response
+- Support weighted token calculation (input, output, cached tokens)
+- Record actual usage post-response to rate limit service
+- Implement quota reconciliation for streaming responses
 
 ## Open Questions
 
