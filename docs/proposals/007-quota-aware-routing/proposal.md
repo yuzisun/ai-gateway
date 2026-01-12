@@ -1,8 +1,8 @@
-# Quota-Based Routing Proposal
+# Quota-Aware Routing Proposal
 
 ## Overview
 
-This proposal describes a quota-based routing system for AI Gateway that enables intelligent traffic distribution between Provisioned Throughput (PT) and On-Demand capacity endpoints based on real-time quota consumption. The system leverages the existing `AIGatewayRoute` backendRefs and routing rules to define endpoint pools, with quota enforcement applied at the upstream ext_proc filter level.
+This proposal describes a quota-aware routing system for AI Gateway that enables intelligent traffic distribution between Provisioned Throughput (PT) and On-Demand capacity endpoints based on real-time quota consumption. The system leverages the existing `AIGatewayRoute` backendRefs and routing rules to define endpoint pools, with quota enforcement applied at the upstream ext_proc filter level.
 
 ## Goals
 
@@ -15,32 +15,32 @@ This proposal describes a quota-based routing system for AI Gateway that enables
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Request Flow                                    │
+│                              Request Flow                                   │
 └─────────────────────────────────────────────────────────────────────────────┘
 
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    Router-Level AI Gateway ExtProc Filter                    │
+│                    Router-Level AI Gateway ExtProc Filter                   │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  1. Parse request, extract model                                     │    │
-│  │  2. Resolve backend based on AIGatewayRoute rules                    │    │
-│  │  3. Set headers for upstream routing                                 │    │
+│  │  1. Parse request, extract model                                    │    │
+│  │  2. Resolve backend based on AIGatewayRoute rules                   │    │
+│  │  3. Set headers for upstream routing (PT/OD endpoint pool)          │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Envoy Router (Route Selection)                       │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  Select cluster based on route matching                              │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
+│                         Envoy Router (Route Selection)                      │
+│  ┌─────────────────────────────────────────────────────────────────────-┐   │
+│  │  Select cluster based on route matching                              │   │
+│  └─────────────────────────────────────────────────────────────────────-┘   │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
+┌─────────────────────────────────────────────────────────────────────────────-┐
 │              Upstream AI Gateway ExtProc Filter (per-cluster)                │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  ┌─────────────────────────────────────────────────────────────────────-┐    │
 │  │  1. Check quota for current backend (rate limit in quota mode)       │    │
 │  │  2. If quota available → Proceed to backend                          │    │
 │  │  3. If quota exceeded (soft limit) →                                 │    │
@@ -48,28 +48,36 @@ This proposal describes a quota-based routing system for AI Gateway that enables
 │  │     b. Return "try next backend" signal                              │    │
 │  │     c. Skip this backend, fallback to next priority backend          │    │
 │  │  4. Transform request to backend schema                              │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
+│  └─────────────────────────────────────────────────────────────────────-┘    │
 │                                                                              │
-│  Rate Limit Check (Quota Mode):                                             │
-│  - Calls rate limit service for backend quota                               │
-│  - Returns quota status in dynamic metadata                                 │
-│  - Does NOT reject request, allows fallback routing                         │
-└─────────────────────────────────────────────────────────────────────────────┘
+│  Rate Limit Check (Quota Mode):                                              │
+│  - Calls rate limit service for backend quota                                │
+│  - Returns quota status in dynamic metadata                                  │
+│  - Does NOT reject request, allows fallback routing                          │
+└─────────────────────────────────────────────────────────────────────────────-┘
                                     │
-                    ┌───────────────┼───────────────┐
-                    │               │               │
-            ┌───────▼───────┐ ┌─────▼─────┐ ┌───────▼───────┐
-            │ Backend 1 (PT)│ │ Backend 2 │ │ Backend 3 (OD)│
-            │ Priority: 1   │ │ Priority: 2│ │ Priority: 3   │
-            │ AWS us-east-1 │ │ GCP central│ │ Anthropic API │
-            └───────────────┘ └───────────┘ └───────────────┘
+                    ┌───────────────┼──────────────--─┐
+                    │               │                 │
+            ┌───────▼───────┐ ┌─────▼─────-┐  ┌───────▼───────┐
+            │ Backend 1 (PT)│ │ Backend 2  │  │ Backend 3 (OD)│
+            │ Priority: 1   │ │ Priority: 1│  │ Priority: 2   │
+            │ AWS us-east-1 │ │ GCP central│  │ Anthropic API │
+            └───────────────┘ └───────────-┘  └───────────────┘
 ```
 
 ## Key Design Decisions
 
-### 1. Quota Check at Upstream ExtProc Filter
+### 0. Quota Check at Route Rate Limit Filter
 
-The quota check happens at the **upstream ext_proc filter** (per-cluster) rather than the router-level filter because:
+The rate limit check happens at the **router rate limit filter** (per-cluster) based on available tenant token quota:
+
+- Enforce max token usage for a given tenant and reject the request when the max limit is over
+- Soft limit check for a given tenant and select the burst or on-demand endpoint pool when soft min limit is over
+
+
+### 1. Quota Check at Upstream Rate Limit Filter
+
+The rate limit check happens at the **upstream rate limit filter** (per-cluster) for backend selection based on available model provider quota:
 
 - The upstream filter knows which specific backend was selected
 - It can make backend-specific quota decisions
@@ -83,15 +91,15 @@ Instead of defining endpoint pools in `AIServiceBackend`, we use the existing `A
 ```yaml
 backendRefs:
   - name: aws-claude-pt-us-east-1      # PT, Priority 1
-  - name: aws-claude-pt-us-west-2      # PT, Priority 2
-  - name: gcp-claude-pt-us-central1    # PT, Priority 3
-  - name: anthropic-claude-ondemand    # On-demand, Priority 4 (fallback)
+  - name: aws-claude-pt-us-west-2      # PT, Priority 1
+  - name: gcp-claude-pt-us-central1    # PT, Priority 1
+  - name: anthropic-claude-ondemand    # On-demand, Priority 2 (fallback)
 ```
 
 ### 3. Fallback via Backend Retry with Quota Skip
 
 When a backend's quota is exceeded:
-1. The upstream ext_proc marks the backend as "quota exceeded" in dynamic metadata
+1. The upstream rate limit filter marks the backend as "quota exceeded" in dynamic metadata
 2. The request is retried to the next priority backend
 3. Backends with exceeded quota are skipped in the retry chain
 
@@ -109,59 +117,34 @@ spec:
   backendRef:
     name: bedrock-us-east-1
     port: 443
-
-  # Backend schema configuration
-  backendSecurityPolicyRef:
-    name: aws-bedrock-auth
-
-  # Quota policy for this backend
-  quotaPolicy:
-    # Soft limit - exceeded requests fallback to next backend
-    softLimit:
-      tokensPerMinute: 100000
-      requestsPerMinute: 1000
-
-    # Hard limit - exceeded requests are rejected (optional)
-    hardLimit:
-      tokensPerMinute: 150000
-      requestsPerMinute: 1500
-
-    # Capacity type annotation for observability
-    capacityType: provisioned  # or "ondemand"
-
-    # Token weights for weighted quota calculation
-    tokenWeights:
-      input:
-        text: 1.0
-        cached_text: 0.1
-        audio: 7.0
-        image: 85.0
-      output:
-        text: 4.0
-        audio: 12.0
-
-    # Tracking configuration
-    tracking:
-      storage: redis
-      windowDuration: 1m
-      failOpen: true
+  # Backend quota policy configuration
+  backendQuotaRef:
+    name: aws-bedrock-model-quota
 ---
 apiVersion: ai-gateway.envoyproxy.io/v1alpha1
-kind: AIServiceBackend
+kind: QuotaPolicy
 metadata:
-  name: anthropic-claude-ondemand
+  name: aws-bedrock-model-quota
   namespace: ai-gateway
 spec:
-  backendRef:
-    name: anthropic-api
-    port: 443
-
-  quotaPolicy:
-    # On-demand typically has no soft limit (or very high)
-    capacityType: ondemand
-    # Optional: set limits for cost control
-    hardLimit:
-      tokensPerMinute: 1000000
+  perModelQuota:
+    - modelName: claude-4-sonnet
+      costExpression: input_tokens + 3 * output_tokens + 0.1 * cached_input_tokens + 1.25 * cache_creation_input_tokens
+      rules:
+        - clientSelectors:
+          - headers:
+              - name: service_tier
+                value: reserved
+          quotaValue:
+            limit: 1M
+            duration: 30s
+        - clientSelectors:
+            - headers:
+              - name: service_tier
+                value: default
+          quotaValue:
+            limit: 2M
+            duration: 60s
 ```
 
 ### AIGatewayRoute with Priority-Based BackendRefs
@@ -180,26 +163,26 @@ spec:
     - matches:
         - headers:
             - name: x-ai-model
-              value: claude-3-sonnet
+              value: claude-4-sonnet
 
       # Backend refs in priority order (first = highest priority)
       # When quota exceeded, fallback to next in list
       backendRefs:
         # Priority 1: AWS PT us-east-1
         - name: aws-claude-pt-us-east-1
-          weight: 100
+          priority: 0
 
-        # Priority 2: AWS PT us-west-2 (regional failover)
+        # Priority 1: AWS PT us-west-2 (regional failover)
         - name: aws-claude-pt-us-west-2
-          weight: 0  # Only used as fallback
+          priority: 0  # Only used as fallback
 
-        # Priority 3: GCP PT us-central1 (cross-cloud failover)
+        # Priority 1: GCP PT us-central1 (cross-cloud failover)
         - name: gcp-claude-pt-us-central1
-          weight: 0
+          priority: 0
 
         # Priority 4: On-demand fallback (always available)
         - name: anthropic-claude-ondemand
-          weight: 0
+          priority: 1
 
       # Quota-based routing configuration
       quotaRouting:
