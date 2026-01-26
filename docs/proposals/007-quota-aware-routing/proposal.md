@@ -67,22 +67,55 @@ This proposal describes a quota-aware routing system for AI Gateway that enables
 
 ## Key Design Decisions
 
-### 0. Quota Check at Route Rate Limit Filter
+### 0. Tenant Quota Check at Router Rate Limit Filter
 
-The rate limit check happens at the **router rate limit filter** (per-cluster) based on available tenant token quota:
+The **router-level rate limit filter** tracks tenant-level quota using QuotaMode:
 
-- Enforce max token usage for a given tenant and reject the request when the max limit is over
-- Soft limit check for a given tenant and select the burst or on-demand endpoint pool when soft min limit is over
+**Configuration:**
+- **Soft Limit** (`quota_mode: true`): Tenant quota threshold for pool selection
+  - When under soft limit: Tenant has "normal" capacity, prefer PT pool if available
+  - When over soft limit: Tenant is consuming high quota, triggers PT availability check
+  - Rate limit service populates `quotaModeViolations` in dynamic metadata when soft limit exceeded
+  - Always returns `OK` status (never rejects)
+- **Hard Limit** (normal mode): Absolute maximum tenant quota
+  - When exceeded: Returns `OVER_LIMIT` → 429 response
 
+**Router ExtProc Processing Flow:**
+1. Router-level ExtProc reads dynamic metadata from rate limit filter
+2. If no `quotaModeViolations` (under soft limit):
+   - Set routing header: `x-endpoint-pool: provisioned` → Route to PT pool (Priority 0)
+3. If `quotaModeViolations` present (over soft limit):
+   - **Query rate limit service** for PT endpoint pool quota availability
+   - Check PT pool quota descriptors (e.g., `pool=provisioned-throughput`)
+   - If PT pool has available quota:
+     - Set routing header: `x-endpoint-pool: provisioned` → Route to PT pool (Priority 0)
+   - If PT pool quota exhausted:
+     - Set routing header: `x-endpoint-pool: on-demand` → Route to on-demand pool (Priority 1)
 
-### 1. Quota Check at Upstream Rate Limit Filter
+**Purpose:**
+- Tenant-level quota management with intelligent pool selection
+- When tenant quota stressed, check PT availability before routing
+- Graceful degradation to on-demand when PT capacity exhausted
 
-The rate limit check happens at the **upstream rate limit filter** (per-cluster) for backend selection based on available model provider quota:
+### 1. Model Quota Check at Upstream Rate Limit Filter
 
-- The upstream filter knows which specific backend was selected
-- It can make backend-specific quota decisions
-- It can signal fallback to the routing layer when quota is exceeded
-- The rate limit service can be called with backend-specific descriptors
+The **upstream rate limit filter** (per-AIServiceBackend) tracks model-level quota for each backend:
+
+**Configuration:**
+- Each AIServiceBackend has its own rate limit filter in the upstream filter chain
+- Rate limit descriptors include backend name and model for granular tracking
+- Cost calculation based on model provider pricing (input/output tokens, cached tokens, etc.)
+- **Normal rate limit mode** (NOT QuotaMode): Returns 429 when quota exceeded
+
+**Filter Chain Setup:**
+- Both PT pool and on-demand pool contain multiple AIServiceBackends
+- Each backend has independent quota limits based on provider capacity
+- Priority-based routing within each pool for retry/fallback
+
+**Enforcement:**
+- When backend quota available: Request proceeds to backend
+- When backend quota exceeded: Returns 429, triggers retry to next backend in same pool
+- Uses Envoy's priority-based retry with `previous_hosts` predicate
 
 ### 2. Reuse Existing BackendRefs for Endpoint Pools
 
@@ -96,12 +129,18 @@ backendRefs:
   - name: anthropic-claude-ondemand    # On-demand, Priority 2 (fallback)
 ```
 
-### 3. Fallback via Backend Retry with Quota Skip
+### 3. Fallback via Priority-Based Retry
 
 When a backend's quota is exceeded:
-1. The upstream rate limit filter marks the backend as "quota exceeded" in dynamic metadata
-2. The request is retried to the next priority backend
-3. Backends with exceeded quota are skipped in the retry chain
+
+1. **Upstream rate limit filter** checks backend quota (normal mode, NOT QuotaMode)
+2. If quota exceeded:
+   - Rate limit filter returns `OVER_LIMIT` status → 429 response
+3. **Envoy retry mechanism** triggered by 429 status code
+4. **Retry policy with `previous_hosts` predicate**:
+   - Skips the backend that returned 429
+   - Selects next backend in the same pool (same priority level)
+5. Process repeats until a backend with available quota is found or retries exhausted
 
 ## API Design
 
@@ -193,138 +232,154 @@ spec:
         maxFallbackAttempts: 3
 ```
 
-## Upstream ExtProc Filter Flow
+## Router ExtProc Filter Flow
 
-### Quota Check Implementation
+### Pool Selection with PT Quota Check
 
 ```go
-// ProcessRequestHeaders in upstream ext_proc filter
-func (p *UpstreamProcessor) ProcessRequestHeaders(ctx context.Context, headers *corev3.HeaderMap) (*extprocv3.ProcessingResponse, error) {
-    // 1. Get backend info from cluster metadata
-    backend := p.getBackendFromClusterMetadata()
+// ProcessRequestHeaders in router-level ext_proc filter
+func (p *RouterProcessor) ProcessRequestHeaders(ctx context.Context, req *extprocv3.ProcessingRequest) (*extprocv3.ProcessingResponse, error) {
+    // 1. Extract tenant and model from request headers
+    tenant := p.getTenantFromHeaders(req.RequestHeaders)
+    model := p.getModelFromHeaders(req.RequestHeaders)
 
-    // 2. Check quota for this backend
-    quotaStatus, err := p.checkQuota(ctx, backend)
-    if err != nil {
-        p.logger.Error("quota check failed", "error", err, "backend", backend.Name)
-        if p.failOpen {
-            // Continue without quota check
-            return p.continueProcessing()
-        }
-        return p.rejectRequest(err)
-    }
+    // 2. Read dynamic metadata from router rate limit filter
+    rateLimitMetadata := p.getRateLimitMetadata(req.Attributes)
 
-    // 3. If quota exceeded (soft limit), signal fallback
-    if quotaStatus.SoftLimitExceeded {
-        p.logger.Info("quota exceeded, signaling fallback",
-            "backend", backend.Name,
-            "used", quotaStatus.Used,
-            "limit", quotaStatus.SoftLimit)
+    // 3. Determine endpoint pool based on tenant quota status
+    endpointPool := p.selectEndpointPool(ctx, tenant, model, rateLimitMetadata)
 
-        return p.signalFallbackToNextBackend(backend, quotaStatus)
-    }
-
-    // 4. Quota available, proceed with request
-    return p.continueProcessing()
-}
-
-// signalFallbackToNextBackend returns a response that triggers retry to next backend
-// Note: ClearRouteCache does NOT work in upstream filters because the route has already
-// been selected by the Router. Instead, we return a retriable status code (529) to trigger
-// Envoy's retry mechanism which will select a different backend.
-func (p *UpstreamProcessor) signalFallbackToNextBackend(backend *Backend, status *QuotaStatus) (*extprocv3.ProcessingResponse, error) {
-    // Return immediate response with retriable status code
-    // This triggers Envoy's retry policy to try the next backend
+    // 4. Set routing header for pool selection
     return &extprocv3.ProcessingResponse{
-        Response: &extprocv3.ProcessingResponse_ImmediateResponse{
-            ImmediateResponse: &extprocv3.ImmediateResponse{
-                Status: &typev3.HttpStatus{
-                    Code: typev3.StatusCode_ServiceUnavailable, // 429 or custom 529
-                },
-                Headers: &extprocv3.HeaderMutation{
-                    SetHeaders: []*corev3.HeaderValueOption{
-                        {
-                            Header: &corev3.HeaderValue{
-                                Key:   "x-envoy-retriable-header-names",
-                                Value: "x-quota-exceeded",
-                            },
-                        },
-                        {
-                            Header: &corev3.HeaderValue{
-                                Key:   "x-quota-exceeded",
-                                Value: "true",
-                            },
-                        },
-                        {
-                            Header: &corev3.HeaderValue{
-                                Key:   "x-exceeded-backend",
-                                Value: backend.Name,
+        Response: &extprocv3.ProcessingResponse_RequestHeaders{
+            RequestHeaders: &extprocv3.HeadersResponse{
+                Response: &extprocv3.CommonResponse{
+                    HeaderMutation: &extprocv3.HeaderMutation{
+                        SetHeaders: []*corev3.HeaderValueOption{
+                            {
+                                Header: &corev3.HeaderValue{
+                                    Key:   "x-endpoint-pool",
+                                    Value: endpointPool, // "provisioned" or "on-demand"
+                                },
                             },
                         },
                     },
                 },
-                Body: []byte(fmt.Sprintf(`{"error": "quota_exceeded", "backend": "%s", "used": %d, "limit": %d}`,
-                    backend.Name, status.Used, status.SoftLimit)),
-            },
-        },
-        DynamicMetadata: &structpb.Struct{
-            Fields: map[string]*structpb.Value{
-                "io.envoy.ai_gateway": structpb.NewStructValue(&structpb.Struct{
-                    Fields: map[string]*structpb.Value{
-                        "quota_exceeded":       structpb.NewBoolValue(true),
-                        "exceeded_backend":     structpb.NewStringValue(backend.Name),
-                        "quota_used":           structpb.NewNumberValue(float64(status.Used)),
-                        "quota_limit":          structpb.NewNumberValue(float64(status.SoftLimit)),
-                        "fallback_required":    structpb.NewBoolValue(true),
-                    },
-                }),
             },
         },
     }, nil
 }
-```
 
-### Quota Check with Rate Limit Service
+// selectEndpointPool determines which pool to route to based on tenant quota and PT availability
+func (p *RouterProcessor) selectEndpointPool(ctx context.Context, tenant, model string, rateLimitMetadata *structpb.Struct) string {
+    // Check if tenant soft limit exceeded
+    quotaModeViolations := p.getQuotaModeViolations(rateLimitMetadata)
 
-```go
-// checkQuota calls the rate limit service in quota mode
-func (p *UpstreamProcessor) checkQuota(ctx context.Context, backend *Backend) (*QuotaStatus, error) {
-    // Build rate limit request for this backend
+    if len(quotaModeViolations) == 0 {
+        // Tenant under soft limit → prefer PT pool
+        p.logger.Debug("tenant under soft limit, routing to PT pool",
+            "tenant", tenant,
+            "model", model)
+        return "provisioned"
+    }
+
+    // Tenant over soft limit → check PT pool availability
+    p.logger.Info("tenant over soft limit, checking PT pool availability",
+        "tenant", tenant,
+        "model", model)
+
+    // Query rate limit service for PT pool quota
+    ptAvailable, err := p.checkPTPoolQuota(ctx, model)
+    if err != nil {
+        p.logger.Error("failed to check PT pool quota, defaulting to on-demand",
+            "error", err,
+            "tenant", tenant,
+            "model", model)
+        return "on-demand"
+    }
+
+    if ptAvailable {
+        p.logger.Info("PT pool has available quota, routing to PT",
+            "tenant", tenant,
+            "model", model)
+        return "provisioned"
+    }
+
+    p.logger.Info("PT pool quota exhausted, routing to on-demand",
+        "tenant", tenant,
+        "model", model)
+    return "on-demand"
+}
+
+// checkPTPoolQuota queries rate limit service for PT pool quota availability
+func (p *RouterProcessor) checkPTPoolQuota(ctx context.Context, model string) (bool, error) {
+    // Build rate limit request for PT pool quota descriptors
     request := &ratelimitv3.RateLimitRequest{
         Domain: "ai-gateway-quota",
         Descriptors: []*ratelimitv3.RateLimitDescriptor{
             {
                 Entries: []*ratelimitv3.RateLimitDescriptor_Entry{
-                    {Key: "backend", Value: backend.Name},
-                    {Key: "model", Value: p.model},
+                    {Key: "pool", Value: "provisioned-throughput"},
+                    {Key: "model", Value: model},
                 },
             },
         },
-        HitsAddend: 1, // Pre-check with 1 token, actual usage recorded post-response
+        HitsAddend: 0, // Query only, don't consume quota
     }
 
     // Call rate limit service
     response, err := p.rateLimitClient.ShouldRateLimit(ctx, request)
     if err != nil {
-        return nil, fmt.Errorf("rate limit service error: %w", err)
+        return false, fmt.Errorf("rate limit service error: %w", err)
     }
 
-    // Parse quota status from response
-    status := &QuotaStatus{
-        Used:              p.parseUsedFromMetadata(response.DynamicMetadata),
-        SoftLimit:         backend.QuotaPolicy.SoftLimit.TokensPerMinute,
-        HardLimit:         backend.QuotaPolicy.HardLimit.TokensPerMinute,
-        SoftLimitExceeded: response.OverallCode == ratelimitv3.RateLimitResponse_OVER_LIMIT,
+    // Check if PT pool has available quota
+    // In normal operation, OK means quota available
+    ptAvailable := response.OverallCode == ratelimitv3.RateLimitResponse_OK
+
+    p.logger.Debug("PT pool quota check result",
+        "available", ptAvailable,
+        "response_code", response.OverallCode,
+        "model", model)
+
+    return ptAvailable, nil
+}
+
+// getQuotaModeViolations extracts quota mode violations from rate limit metadata
+func (p *RouterProcessor) getQuotaModeViolations(metadata *structpb.Struct) []int {
+    if metadata == nil {
+        return nil
     }
 
-    // In quota mode, OVER_LIMIT means soft limit exceeded but request is not rejected
-    if response.DynamicMetadata != nil {
-        if quotaMode := response.DynamicMetadata.Fields["quotaModeEnabled"]; quotaMode != nil && quotaMode.GetBoolValue() {
-            status.QuotaModeActive = true
-        }
+    // Navigate to envoy.filters.http.ratelimit namespace
+    rlNamespace, ok := metadata.Fields["envoy.filters.http.ratelimit"]
+    if !ok {
+        return nil
     }
 
-    return status, nil
+    rlStruct := rlNamespace.GetStructValue()
+    if rlStruct == nil {
+        return nil
+    }
+
+    // Get quotaModeViolations list
+    violations, ok := rlStruct.Fields["quotaModeViolations"]
+    if !ok {
+        return nil
+    }
+
+    violationsList := violations.GetListValue()
+    if violationsList == nil {
+        return nil
+    }
+
+    // Convert to int slice
+    result := make([]int, 0, len(violationsList.Values))
+    for _, v := range violationsList.Values {
+        result = append(result, int(v.GetNumberValue()))
+    }
+
+    return result
 }
 ```
 
@@ -443,14 +498,35 @@ spec:
       kind: HTTPRoute
       name: claude-route
 
+  # Router-level rate limit with QuotaMode for tenant quota
+  rateLimit:
+    rules:
+      # Soft limit with QuotaMode - tracks tenant quota for pool selection
+      - limit: 1000000  # 1M tokens per minute (soft limit)
+        clientSelectors:
+          - headers:
+              - type: Exact
+                name: x-ai-gateway-tenant
+                value: tenant-a
+        quotaMode: true  # Don't reject, populate metadata when exceeded
+
+      # Hard limit - absolute maximum per tenant
+      - limit: 5000000  # 5M tokens per minute (hard limit)
+        clientSelectors:
+          - headers:
+              - type: Exact
+                name: x-ai-gateway-tenant
+                value: tenant-a
+        # Normal mode - returns 429 when exceeded
+
+  # Retry policy for backend failover
   retry:
     numRetries: 3
     retryOn:
       - "retriable-status-codes"
       - "5xx"
     retriableStatusCodes:
-      - 503
-      - 429 # Returned by ext_proc when quota exceeded
+      - 429  # Returned by upstream rate limit when backend quota exceeded
     perTryTimeout: 30s
 
     # Skip hosts that were already attempted
@@ -494,43 +570,99 @@ spec:
 
 ## Rate Limit Service Configuration
 
-### Per-Backend Quota Descriptors
+### Tenant Quota Descriptors (Router Level)
+
+```yaml
+domain: ai-gateway-tenant-quota
+descriptors:
+  # Tenant soft limit with QuotaMode
+  - key: tenant
+    value: tenant-a
+    descriptors:
+      - key: limit_type
+        value: soft
+        rate_limit:
+          unit: minute
+          requests_per_unit: 1000000  # 1M tokens
+        quota_mode: true  # Don't reject, populate metadata
+
+  # Tenant hard limit (normal mode)
+  - key: tenant
+    value: tenant-a
+    descriptors:
+      - key: limit_type
+        value: hard
+        rate_limit:
+          unit: minute
+          requests_per_unit: 5000000  # 5M tokens
+        # Normal mode - rejects when exceeded
+```
+
+### PT Pool Quota Descriptors (Router Level Check)
 
 ```yaml
 domain: ai-gateway-quota
 descriptors:
-  # AWS Claude PT us-east-1
+  # PT pool aggregate quota across all PT backends
+  - key: pool
+    value: provisioned-throughput
+    descriptors:
+      - key: model
+        value: claude-4-sonnet
+        rate_limit:
+          unit: minute
+          requests_per_unit: 50000  # Combined PT capacity
+        # Normal mode - used for availability check (HitsAddend: 0)
+```
+
+### Per-Backend Quota Descriptors (Upstream Level)
+
+```yaml
+domain: ai-gateway-quota
+descriptors:
+  # AWS Claude PT us-east-1 backend
   - key: backend
     value: aws-claude-pt-us-east-1
     descriptors:
       - key: model
-        value: claude-3-sonnet
+        value: claude-4-sonnet
         rate_limit:
           unit: minute
-          requests_per_unit: 1000
-        quota_mode: true  # Don't reject, just track
+          requests_per_unit: 20000  # PT backend capacity
+        # Normal mode - returns 429 when exceeded
 
-  # AWS Claude PT us-west-2
+  # AWS Claude PT us-west-2 backend
   - key: backend
     value: aws-claude-pt-us-west-2
     descriptors:
       - key: model
-        value: claude-3-sonnet
+        value: claude-4-sonnet
         rate_limit:
           unit: minute
-          requests_per_unit: 800
-        quota_mode: true
+          requests_per_unit: 15000
+        # Normal mode - returns 429 when exceeded
 
-  # On-demand (high limit or unlimited)
+  # GCP Claude PT us-central1 backend
+  - key: backend
+    value: gcp-claude-pt-us-central1
+    descriptors:
+      - key: model
+        value: claude-4-sonnet
+        rate_limit:
+          unit: minute
+          requests_per_unit: 15000
+        # Normal mode - returns 429 when exceeded
+
+  # On-demand backend (high limit)
   - key: backend
     value: anthropic-claude-ondemand
     descriptors:
       - key: model
-        value: claude-3-sonnet
+        value: claude-4-sonnet
         rate_limit:
           unit: minute
-          requests_per_unit: 100000  # Very high for on-demand
-        quota_mode: true
+          requests_per_unit: 1000000  # Very high for on-demand
+        # Normal mode - returns 429 when exceeded
 ```
 
 ## Sequence Diagram
@@ -538,71 +670,65 @@ descriptors:
 ### Priority-Based Failover Flow
 
 ```
-┌──────┐     ┌─────────────┐     ┌────────┐     ┌──────────────┐     ┌──────────────┐     ┌─────────────┐
-│Client│     │Router ExtProc│    │Router/LB│    │Upstream ExtProc│   │RateLimit Svc │     │   Backend   │
-└──┬───┘     └──────┬──────┘     └───┬────┘     └───────┬──────┘     └──────┬───────┘     └──────┬──────┘
-   │                │                │                   │                   │                   │
-   │ POST /chat     │                │                   │                   │                   │
-   │───────────────>│                │                   │                   │                   │
-   │                │                │                   │                   │                   │
-   │                │ Set model hdr  │                   │                   │                   │
-   │                │───────────────>│                   │                   │                   │
-   │                │                │                   │                   │                   │
-   │                │                │ Select Priority 0 │                   │                   │
-   │                │                │ Host: PT-east-1   │                   │                   │
-   │                │                │──────────────────>│                   │                   │
-   │                │                │                   │                   │                   │
-   │                │                │                   │ Check quota       │                   │
-   │                │                │                   │ (PT-east-1)       │                   │
-   │                │                │                   │──────────────────>│                   │
-   │                │                │                   │                   │                   │
-   │                │                │                   │ OVER_LIMIT        │                   │
-   │                │                │                   │<──────────────────│                   │
-   │                │                │                   │                   │                   │
-   │                │                │ 429 Response      │                   │                   │
-   │                │                │<──────────────────│                   │                   │
-   │                │                │                   │                   │                   │
-   │                │                │ Retry #1:         │                   │                   │
-   │                │                │ previous_hosts    │                   │                   │
-   │                │                │ skips PT-east-1   │                   │                   │
-   │                │                │ Select PT-west-2  │                   │                   │
-   │                │                │──────────────────>│                   │                   │
-   │                │                │                   │                   │                   │
-   │                │                │                   │ Check quota       │                   │
-   │                │                │                   │ (PT-west-2)       │                   │
-   │                │                │                   │──────────────────>│                   │
-   │                │                │                   │                   │                   │
-   │                │                │                   │ OVER_LIMIT        │                   │
-   │                │                │                   │<──────────────────│                   │
-   │                │                │                   │                   │                   │
-   │                │                │ 429 Response      │                   │                   │
-   │                │                │<──────────────────│                   │                   │
-   │                │                │                   │                   │                   │
-   │                │                │ Retry #2:         │                   │                   │
-   │                │                │ previous_priorities│                  │                   │
-   │                │                │ marks P0 exhausted│                   │                   │
-   │                │                │ Failover to P1    │                   │                   │
-   │                │                │ Select: On-demand │                   │                   │
-   │                │                │──────────────────>│                   │                   │
-   │                │                │                   │                   │                   │
-   │                │                │                   │ Check quota       │                   │
-   │                │                │                   │ (On-demand)       │                   │
-   │                │                │                   │──────────────────>│                   │
-   │                │                │                   │                   │                   │
-   │                │                │                   │ OK (under limit)  │                   │
-   │                │                │                   │<──────────────────│                   │
-   │                │                │                   │                   │                   │
-   │                │                │                   │ Forward request   │                   │
-   │                │                │                   │──────────────────────────────────────>│
-   │                │                │                   │                   │                   │
-   │                │                │                   │                   │      Response     │
-   │                │                │                   │<──────────────────────────────────────│
-   │                │                │                   │                   │                   │
-   │                │                │                   │ Record usage      │                   │
-   │                │                │                   │──────────────────>│                   │
-   │                │                │                   │                   │                   │
-   │<───────────────────────────────────────────────────────────────────────────────────────────│
-   │  Response                       │                   │                   │                   │
+┌──────┐  ┌────────────┐  ┌─────────────┐  ┌────────┐  ┌──────────────┐  ┌──────────────┐  ┌─────────┐
+│Client│  │Router RL   │  │Router ExtProc│ │Router/LB│ │Upstream RL   │  │RateLimit Svc │  │ Backend │
+│      │  │Filter      │  │              │  │         │  │Filter        │  │              │  │         │
+└──┬───┘  └─────┬──────┘  └──────┬──────┘  └───┬────┘  └───────┬──────┘  └──────┬───────┘  └────┬────┘
+   │             │                │             │                │                │               │
+   │ POST /chat  │                │             │                │                │               │
+   │────────────>│                │             │                │                │               │
+   │             │                │             │                │                │               │
+   │             │ Check tenant quota (QuotaMode)                │                │               │
+   │             │───────────────────────────────────────────────────────────────>│               │
+   │             │                │             │                │                │               │
+   │             │ SOFT LIMIT EXCEEDED (quotaModeViolations in metadata)          │               │
+   │             │<───────────────────────────────────────────────────────────────│               │
+   │             │                │             │                │                │               │
+   │             │ Pass metadata  │             │                │                │               │
+   │             │───────────────>│             │                │                │               │
+   │             │                │             │                │                │               │
+   │             │                │ Detect soft limit exceeded   │                │               │
+   │             │                │ Check PT pool availability   │                │               │
+   │             │                │─────────────────────────────────────────────>│               │
+   │             │                │             │                │                │               │
+   │             │                │ PT pool OK (quota available) │                │               │
+   │             │                │<─────────────────────────────────────────────│               │
+   │             │                │             │                │                │               │
+   │             │                │ Set: x-endpoint-pool=provisioned              │               │
+   │             │                │────────────>│                │                │               │
+   │             │                │             │                │                │               │
+   │             │                │             │ Select Priority 0: PT-east-1   │               │
+   │             │                │             │───────────────>│                │               │
+   │             │                │             │                │                │               │
+   │             │                │             │                │ Check backend quota (normal)  │
+   │             │                │             │                │───────────────>│               │
+   │             │                │             │                │                │               │
+   │             │                │             │                │ OVER_LIMIT (429)              │
+   │             │                │             │                │<───────────────│               │
+   │             │                │             │                │                │               │
+   │             │                │             │ 429 Response   │                │               │
+   │             │                │             │<───────────────│                │               │
+   │             │                │             │                │                │               │
+   │             │                │             │ Retry: previous_hosts skips PT-east-1          │
+   │             │                │             │ Select PT-west-2                               │
+   │             │                │             │───────────────>│                │               │
+   │             │                │             │                │                │               │
+   │             │                │             │                │ Check quota    │               │
+   │             │                │             │                │───────────────>│               │
+   │             │                │             │                │                │               │
+   │             │                │             │                │ OK             │               │
+   │             │                │             │                │<───────────────│               │
+   │             │                │             │                │                │               │
+   │             │                │             │                │ Forward request──────────────>│
+   │             │                │             │                │                │               │
+   │             │                │             │                │                │   Response    │
+   │             │                │             │                │                │<──────────────│
+   │             │                │             │                │                │               │
+   │             │                │             │                │ Record token usage            │
+   │             │                │             │                │───────────────>│               │
+   │             │                │             │                │                │               │
+   │<────────────────────────────────────────────────────────────────────────────────────────────│
+   │  Response   │                │             │                │                │               │
 ```
 
 ### Legend
@@ -644,23 +770,35 @@ var (
 
 ## Implementation Items
 
-### 1: Quota Check in Upstream ExtProc
-- Parse quota mode dynamic metadata set by the rate limit filter (soft limit exceeded vs. hard limit)
-- Return immediate 429 response when quota exceeded to trigger retry
-- Record quota check metrics per backend
+### 1: Router ExtProc - PT Pool Availability Check
+- Read tenant quota metadata from router-level rate limit filter
+- Parse `quotaModeViolations` from dynamic metadata (`envoy.filters.http.ratelimit` namespace)
+- When soft limit exceeded:
+  - Query rate limit service for PT pool quota descriptors (with `HitsAddend: 0` for query-only)
+  - Check PT pool availability based on response status
+- Set routing header (`x-endpoint-pool`) based on PT availability:
+  - PT available → `provisioned` (Priority 0)
+  - PT exhausted → `on-demand` (Priority 1)
+- Record pool selection metrics
 
-### 2: Retry Policy Configuration
-- Configure `previous_hosts` retry predicate to skip already-attempted hosts
-- Configure `previous_priorities` retry predicate to failover to lower priority levels
-- Set appropriate `hostSelectionRetryMaxAttempts` for host selection within retry
-- Set `numRetries` based on number of backends across all priorities
-- Configure `retriableStatusCodes` to include 429
+### 2: Upstream Rate Limit Filter per AIServiceBackend
+- Configure rate limit filter in upstream filter chain for each backend
+- Use normal rate limit mode (NOT QuotaMode) - returns 429 when quota exceeded
+- Rate limit descriptors with backend name and model
+- Cost calculation based on model provider pricing (input/output/cached tokens)
+- Token usage recorded post-response using dynamic metadata
 
-### 3: Token-Based Quota Tracking
-- Integrate with quota tracker for token-based limits
-- Support weighted token calculation (input, output, cached tokens)
-- Record actual usage post-response to rate limit service
-- Implement quota reconciliation for streaming responses
+### 3: Retry Policy Configuration
+- Configure router-level rate limit with QuotaMode for tenant quota
+- Configure `previous_hosts` retry predicate to skip backends that returned 429
+- Set `numRetries` based on number of backends in pool
+- Configure `retriableStatusCodes` to include 429 (from upstream rate limit)
+- Set appropriate `perTryTimeout` for backend requests
+
+### 4: Rate Limit Service Configuration
+- **Tenant quota descriptors**: Soft limit (QuotaMode) + hard limit (normal)
+- **PT pool quota descriptors**: Aggregate PT capacity for availability check
+- **Per-backend quota descriptors**: Individual backend limits (normal mode)
 
 ## Open Questions
 
