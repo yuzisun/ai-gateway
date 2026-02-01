@@ -167,21 +167,40 @@ func (r *routerProcessor[ReqT, RespT, RespChunkT, EndpointSpecT]) ProcessRespons
 	return
 }
 
+// formatUserFacingErrorJSON formats a user-facing error as a JSON response body.
+// Returns JSON in format: {"type":"error","error":{"type":"<errorType>","code":"<statusCode>","message":"<message>"}}
+func formatUserFacingErrorJSON(errorType string, statusCode int, message string) []byte {
+	return fmt.Appendf(nil, `{"type":"error","error":{"type":"%s","code":"%d","message":"%s"}}`,
+		errorType, statusCode, message)
+}
+
+// createUserFacingErrorResponse creates an ImmediateResponse for user-facing errors with JSON body.
+func createUserFacingErrorResponse(statusCode int, errorType string, message string) *extprocv3.ProcessingResponse {
+	body := formatUserFacingErrorJSON(errorType, statusCode, message)
+	headerMutation := &extprocv3.HeaderMutation{}
+	setHeader(headerMutation, "content-type", "application/json")
+	setHeader(headerMutation, "content-length", strconv.Itoa(len(body)))
+
+	return &extprocv3.ProcessingResponse{
+		Response: &extprocv3.ProcessingResponse_ImmediateResponse{
+			ImmediateResponse: &extprocv3.ImmediateResponse{
+				Status:     &typev3.HttpStatus{Code: typev3.StatusCode(statusCode)},
+				Headers:    headerMutation,
+				Body:       body,
+				GrpcStatus: &extprocv3.GrpcStatus{Status: uint32(codes.InvalidArgument)},
+			},
+		},
+	}
+}
+
 // ProcessRequestBody implements [Processor.ProcessRequestBody].
 func (r *routerProcessor[ReqT, RespT, RespChunkT, EndpointSpecT]) ProcessRequestBody(ctx context.Context, rawBody *extprocv3.HttpBody) (*extprocv3.ProcessingResponse, error) {
 	originalModel, body, stream, mutatedOriginalBody, err := r.eh.ParseBody(rawBody.Body, len(r.config.RequestCosts) > 0)
 	if err != nil {
 		if userFacingErr := internalapi.GetUserFacingError(err); userFacingErr != nil {
 			// return to user as 400 -  e.g., "malformed request: failed to parse JSON for /v1/chat/completions"
-			return &extprocv3.ProcessingResponse{
-				Response: &extprocv3.ProcessingResponse_ImmediateResponse{
-					ImmediateResponse: &extprocv3.ImmediateResponse{
-						Status:     &typev3.HttpStatus{Code: typev3.StatusCode(400)},
-						Body:       []byte(userFacingErr.Error()),
-						GrpcStatus: &extprocv3.GrpcStatus{Status: uint32(codes.InvalidArgument)},
-					},
-				},
-			}, fmt.Errorf("failed to parse request body: %w", err)
+			r.logger.Info("returning user-facing error for malformed request", slog.String("error", err.Error()))
+			return createUserFacingErrorResponse(400, "BadRequest", userFacingErr.Error()), nil
 		}
 		return nil, fmt.Errorf("failed to parse request body: %w", err)
 	}
@@ -274,15 +293,10 @@ func (u *upstreamProcessor[ReqT, RespT, RespChunkT, EndpointSpecT]) ProcessReque
 	if err != nil {
 		if userFacingErr := internalapi.GetUserFacingError(err); userFacingErr != nil {
 			// return to user as 422 -  e.g., "invalid request body: tool_choice type not supported"
-			return &extprocv3.ProcessingResponse{
-				Response: &extprocv3.ProcessingResponse_ImmediateResponse{
-					ImmediateResponse: &extprocv3.ImmediateResponse{
-						Status:     &typev3.HttpStatus{Code: typev3.StatusCode(422)},
-						Body:       []byte(userFacingErr.Error()),
-						GrpcStatus: &extprocv3.GrpcStatus{Status: uint32(codes.InvalidArgument)},
-					},
-				},
-			}, fmt.Errorf("failed to transform request: %w", err)
+			u.logger.Info("returning user-facing error for invalid request", slog.String("error", err.Error()))
+			// Record this as a failed request in metrics
+			u.metrics.RecordRequestCompletion(ctx, false, u.requestHeaders)
+			return createUserFacingErrorResponse(422, "UnprocessableEntity", userFacingErr.Error()), nil
 		}
 		return nil, fmt.Errorf("failed to transform request: %w", err)
 	}

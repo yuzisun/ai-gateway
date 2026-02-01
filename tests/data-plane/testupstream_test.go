@@ -185,7 +185,7 @@ func TestWithTestUpstream(t *testing.T) {
 			method:          http.MethodPost,
 			requestBody:     `{"model": "something", "messages": [invalid json`,
 			expStatus:       http.StatusBadRequest,
-			expResponseBody: `malformed request: failed to parse JSON for /v1/chat/completions`,
+			expResponseBody: `{"type":"error","error":{"type":"BadRequest","code":"400","message":"malformed request: failed to parse JSON for /v1/chat/completions"}}`,
 		},
 		{
 			name:            "gcp-anthropicai - /v1/chat/completions - missing max_tokens",
@@ -194,7 +194,7 @@ func TestWithTestUpstream(t *testing.T) {
 			method:          http.MethodPost,
 			requestBody:     `{"model":"claude-3-sonnet","messages":[{"role":"user","content":"Hello"}]}`,
 			expStatus:       http.StatusUnprocessableEntity,
-			expResponseBody: `invalid request body: max_tokens or max_completion_tokens is required`,
+			expResponseBody: `{"type":"error","error":{"type":"UnprocessableEntity","code":"422","message":"invalid request body: max_tokens or max_completion_tokens is required"}}`,
 		},
 		{
 			name:            "aws system role - /v1/chat/completions",
@@ -1358,7 +1358,7 @@ data: {"type":"response.completed","sequence_number":10,"response":{"id":"resp_6
 				expectedResponseBody := m.ReplaceAllString(expResponseBody, "<UUID4-replaced>")
 				expectedResponseBody = createdReg.ReplaceAllString(expectedResponseBody, `"created":123`)
 
-				// Use plain-text comparison for streaming or 404 responses.
+				// Use plain-text comparison for streaming or 4xx error responses.
 				require.Equal(t, strings.TrimSpace(expectedResponseBody), strings.TrimSpace(bodyStr), "Response body mismatch")
 			default:
 				expResponseBody := cmp.Or(tc.expResponseBody, tc.responseBody)

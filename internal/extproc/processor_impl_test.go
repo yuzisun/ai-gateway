@@ -91,16 +91,16 @@ func Test_chatCompletionProcessorRouterFilter_ProcessRequestBody(t *testing.T) {
 		p := &chatCompletionProcessorRouterFilter{
 			tracer: tracingapi.NoopTracer[openai.ChatCompletionRequest, openai.ChatCompletionResponse, openai.ChatCompletionResponseChunk]{},
 			config: &filterapi.RuntimeConfig{},
+			logger: slog.Default(),
 		}
 		resp, err := p.ProcessRequestBody(t.Context(), &extprocv3.HttpBody{Body: []byte("nonjson")})
-		require.Error(t, err, "Should return an error along with immediate response")
-		require.Contains(t, err.Error(), "failed to parse request body")
+		require.NoError(t, err, "Should not return error when returning immediate response")
 		require.NotNil(t, resp, "Response should not be nil")
 
 		immediateResp, ok := resp.Response.(*extprocv3.ProcessingResponse_ImmediateResponse)
 		require.True(t, ok, "Response should be an immediate response")
 		require.Equal(t, typev3.StatusCode(400), immediateResp.ImmediateResponse.Status.Code)
-		require.Equal(t, "malformed request: failed to parse JSON for /v1/chat/completions", string(immediateResp.ImmediateResponse.Body))
+		require.JSONEq(t, `{"type":"error","error":{"type":"BadRequest","code":"400","message":"malformed request: failed to parse JSON for /v1/chat/completions"}}`, string(immediateResp.ImmediateResponse.Body))
 	})
 
 	t.Run("ok", func(t *testing.T) {
@@ -491,16 +491,16 @@ func Test_chatCompletionProcessorUpstreamFilter_ProcessRequestHeaders(t *testing
 					requestHeaders: headers,
 					metrics:        mm,
 					translator:     tr,
+					logger:         slog.Default(),
 				}
 				resp, err := p.ProcessRequestHeaders(t.Context(), nil)
-				require.Error(t, err, "Should return an error along with immediate response")
-				require.Contains(t, err.Error(), "failed to transform request")
+				require.NoError(t, err, "Should not return error when returning immediate response")
 				require.NotNil(t, resp, "Response should not be nil")
 
 				immediateResp, ok := resp.Response.(*extprocv3.ProcessingResponse_ImmediateResponse)
 				require.True(t, ok, "Response should be an immediate response")
 				require.Equal(t, typev3.StatusCode(422), immediateResp.ImmediateResponse.Status.Code)
-				require.Equal(t, "invalid request body: missing required field", string(immediateResp.ImmediateResponse.Body))
+				require.JSONEq(t, `{"type":"error","error":{"type":"UnprocessableEntity","code":"422","message":"invalid request body: missing required field"}}`, string(immediateResp.ImmediateResponse.Body))
 
 				mm.RequireRequestFailure(t)
 				require.Zero(t, mm.inputTokenCount)
