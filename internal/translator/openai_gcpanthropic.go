@@ -56,7 +56,7 @@ type openAIToGCPAnthropicTranslatorV1ChatCompletion struct {
 func (o *openAIToGCPAnthropicTranslatorV1ChatCompletion) RequestBody(_ []byte, openAIReq *openai.ChatCompletionRequest, _ bool) (
 	newHeaders []internalapi.Header, newBody []byte, err error,
 ) {
-	params, err := buildAnthropicParams(openAIReq)
+	params, contextManagement, err := buildAnthropicParams(openAIReq)
 	if err != nil {
 		return
 	}
@@ -93,6 +93,19 @@ func (o *openAIToGCPAnthropicTranslatorV1ChatCompletion) RequestBody(_ []byte, o
 	body, err = sjson.SetBytes(body, anthropicVersionKey, anthropicVersion)
 	if err != nil {
 		return
+	}
+
+	// c. Inject "context_management" if present (beta Anthropic feature not in non-beta MessageNewParams).
+	if contextManagement != nil {
+		var cmJSON []byte
+		cmJSON, err = json.Marshal(contextManagement)
+		if err != nil {
+			return
+		}
+		body, err = sjson.SetRawBytes(body, "context_management", cmJSON)
+		if err != nil {
+			return
+		}
 	}
 	newBody = body
 	newHeaders = []internalapi.Header{{pathHeaderName, path}, {contentLengthHeaderName, strconv.Itoa(len(newBody))}}

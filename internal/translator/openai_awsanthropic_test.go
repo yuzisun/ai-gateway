@@ -294,6 +294,51 @@ func TestOpenAIToAWSAnthropicTranslatorV1ChatCompletion_RequestBody(t *testing.T
 		_, _, err := translator.RequestBody(nil, missingTokensReq, false)
 		require.ErrorContains(t, err, "max_tokens or max_completion_tokens is required")
 	})
+
+	t.Run("Request with context_management", func(t *testing.T) {
+		req := &openai.ChatCompletionRequest{
+			Model:     "anthropic.claude-3-opus-20240229-v1:0",
+			Messages:  []openai.ChatCompletionMessageParamUnion{},
+			MaxTokens: ptr.To(int64(100)),
+			ContextManagement: &anthropic.BetaContextManagementConfigParam{
+				Edits: []anthropic.BetaContextManagementConfigEditUnionParam{
+					{OfCompact20260112: &anthropic.BetaCompact20260112EditParam{
+						Trigger: anthropic.BetaInputTokensTriggerParam{Value: 150000},
+					}},
+				},
+			},
+		}
+		translator := NewChatCompletionOpenAIToAWSAnthropicTranslator("", "")
+		_, body, err := translator.RequestBody(nil, req, false)
+		require.NoError(t, err)
+		require.NotNil(t, body)
+
+		cmBlock := gjson.GetBytes(body, "context_management")
+		require.True(t, cmBlock.Exists(), "The 'context_management' field should exist in the request body")
+		require.True(t, cmBlock.IsObject(), "The 'context_management' field should be a JSON object")
+
+		edits := cmBlock.Get("edits")
+		require.True(t, edits.Exists(), "The 'edits' field should exist")
+		require.True(t, edits.IsArray(), "The 'edits' field should be an array")
+		require.Equal(t, 1, len(edits.Array()))
+		require.Equal(t, "compact_20260112", edits.Array()[0].Get("type").String())
+		require.Equal(t, int64(150000), edits.Array()[0].Get("trigger.value").Int())
+	})
+
+	t.Run("Request without context_management", func(t *testing.T) {
+		req := &openai.ChatCompletionRequest{
+			Model:     "anthropic.claude-3-opus-20240229-v1:0",
+			Messages:  []openai.ChatCompletionMessageParamUnion{},
+			MaxTokens: ptr.To(int64(100)),
+		}
+		translator := NewChatCompletionOpenAIToAWSAnthropicTranslator("", "")
+		_, body, err := translator.RequestBody(nil, req, false)
+		require.NoError(t, err)
+		require.NotNil(t, body)
+
+		cmBlock := gjson.GetBytes(body, "context_management")
+		require.False(t, cmBlock.Exists(), "The 'context_management' field should not exist in the request body")
+	})
 }
 
 func TestOpenAIToAWSAnthropicTranslatorV1ChatCompletion_ResponseBody(t *testing.T) {
@@ -428,6 +473,47 @@ func TestOpenAIToAWSAnthropicTranslatorV1ChatCompletion_ResponseBody(t *testing.
 			}
 		})
 	}
+}
+
+func TestOpenAIToAWSAnthropicTranslatorV1ChatCompletion_ResponseBody_Compaction(t *testing.T) {
+	// The non-beta SDK's ContentBlockUnion doesn't have a typed field for compaction content,
+	// so we test with raw JSON to ensure the RawJSON()-based extraction works.
+	rawAnthropicResponse := `{
+		"id": "msg_compact_01",
+		"type": "message",
+		"role": "assistant",
+		"model": "claude-3-5-sonnet-20241022",
+		"content": [
+			{"type": "text", "text": "Here is my response."},
+			{"type": "compaction", "content": "Summary of the conversation so far."}
+		],
+		"stop_reason": "compaction",
+		"usage": {"input_tokens": 100, "output_tokens": 50}
+	}`
+
+	translator := NewChatCompletionOpenAIToAWSAnthropicTranslator("", "")
+	hm, body, usedToken, _, err := translator.ResponseBody(
+		map[string]string{statusHeaderName: "200"},
+		bytes.NewBufferString(rawAnthropicResponse), true, nil,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, hm)
+	require.NotNil(t, body)
+
+	var gotResp openai.ChatCompletionResponse
+	err = json.Unmarshal(body, &gotResp)
+	require.NoError(t, err)
+
+	require.Len(t, gotResp.Choices, 1)
+	require.Equal(t, "assistant", gotResp.Choices[0].Message.Role)
+	require.NotNil(t, gotResp.Choices[0].Message.Content)
+	require.Equal(t, "Here is my response.", *gotResp.Choices[0].Message.Content)
+	require.NotNil(t, gotResp.Choices[0].Message.CompactionContent)
+	require.Equal(t, "Summary of the conversation so far.", *gotResp.Choices[0].Message.CompactionContent)
+	require.Equal(t, openai.ChatCompletionChoicesFinishReasonStop, gotResp.Choices[0].FinishReason)
+
+	expectedTokenUsage := tokenUsageFrom(100, 0, 0, 50, 150)
+	require.Equal(t, expectedTokenUsage, usedToken)
 }
 
 func TestOpenAIToAWSAnthropicTranslator_ResponseError(t *testing.T) {

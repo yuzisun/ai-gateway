@@ -18,6 +18,7 @@ import (
 	anthropicParam "github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	openAIconstant "github.com/openai/openai-go/shared/constant"
+	"github.com/tidwall/gjson"
 	"k8s.io/utils/ptr"
 
 	"github.com/envoyproxy/ai-gateway/internal/apischema/awsbedrock"
@@ -39,7 +40,8 @@ func anthropicToOpenAIFinishReason(stopReason anthropic.StopReason) (openai.Chat
 	// or Claude encountered one of your custom stop sequences.
 	// TODO: A better way to return pause_turn
 	// TODO: "pause_turn" Used with server tools like web search when Claude needs to pause a long-running operation.
-	case anthropic.StopReasonEndTurn, anthropic.StopReasonStopSequence, anthropic.StopReasonPauseTurn:
+	case anthropic.StopReasonEndTurn, anthropic.StopReasonStopSequence, anthropic.StopReasonPauseTurn,
+		anthropic.StopReason("compaction"): // Beta: context management compaction completed.
 		return openai.ChatCompletionChoicesFinishReasonStop, nil
 	case anthropic.StopReasonMaxTokens: // Claude stopped because it reached the max_tokens limit specified in your request.
 		// TODO: do we want to return an error? see: https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/implement-tool-use#handling-the-max-tokens-stop-reason
@@ -383,6 +385,16 @@ func processAssistantContent(contentBlocks []anthropic.ContentBlockParamUnion, c
 				return nil, fmt.Errorf("unsupported RedactedContent type: %T, expected string", v)
 			}
 		}
+	case openai.ChatCompletionAssistantMessageParamContentTypeCompaction:
+		if content.CompactionContent != nil {
+			// Compaction is a beta-only feature in the Anthropic SDK, so the non-beta
+			// ContentBlockParamUnion doesn't have an OfCompaction field. We construct the
+			// block using the text block param as a carrier and rely on sjson to fix the
+			// type in the marshaled JSON at the caller level.
+			// For now, we use a text block as a placeholder - the compaction content is
+			// a summary that can be sent as text in the non-beta API.
+			contentBlocks = append(contentBlocks, anthropic.NewTextBlock(*content.CompactionContent))
+		}
 	default:
 		return nil, fmt.Errorf("content type not supported: %v", content.Type)
 	}
@@ -578,7 +590,10 @@ func getThinkingConfigParamUnion(tu *openai.ThinkingUnion) *anthropic.ThinkingCo
 
 // buildAnthropicParams is a helper function that translates an OpenAI request
 // into the parameter struct required by the Anthropic SDK.
-func buildAnthropicParams(openAIReq *openai.ChatCompletionRequest) (params *anthropic.MessageNewParams, err error) {
+// It also returns the context_management config if present in the OpenAI request,
+// so that callers can inject it into the final JSON body (it is a beta-only field
+// not present in the non-beta MessageNewParams).
+func buildAnthropicParams(openAIReq *openai.ChatCompletionRequest) (params *anthropic.MessageNewParams, contextManagement *anthropic.BetaContextManagementConfigParam, err error) {
 	// 1. Handle simple parameters and defaults.
 	maxTokens := cmp.Or(openAIReq.MaxCompletionTokens, openAIReq.MaxTokens)
 	if maxTokens == nil {
@@ -610,7 +625,7 @@ func buildAnthropicParams(openAIReq *openai.ChatCompletionRequest) (params *anth
 
 	if openAIReq.Temperature != nil {
 		if err = validateTemperatureForAnthropic(openAIReq.Temperature); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		params.Temperature = anthropic.Float(*openAIReq.Temperature)
 	}
@@ -629,7 +644,10 @@ func buildAnthropicParams(openAIReq *openai.ChatCompletionRequest) (params *anth
 		params.Thinking = *getThinkingConfigParamUnion(openAIReq.Thinking)
 	}
 
-	return params, nil
+	// 6. Pass through context_management as raw JSON for callers to inject.
+	contextManagement = openAIReq.ContextManagement
+
+	return params, contextManagement, nil
 }
 
 // anthropicToolUseToOpenAICalls converts Anthropic tool_use content blocks to OpenAI tool calls.
@@ -917,6 +935,11 @@ func (p *anthropicStreamParser) handleAnthropicStreamEvent(eventType []byte, dat
 			return nil, nil
 		}
 
+		if event.ContentBlock.Type == string(constant.ValueOf[constant.Compaction]()) {
+			delta := openai.ChatCompletionResponseChunkChoiceDelta{CompactionContent: emptyStrPtr}
+			return p.constructOpenAIChatCompletionChunk(delta, ""), nil
+		}
+
 		return nil, nil
 
 	case string(constant.ValueOf[constant.MessageDelta]()):
@@ -972,6 +995,12 @@ func (p *anthropicStreamParser) handleAnthropicStreamEvent(eventType []byte, dat
 				},
 			}
 			tool.inputJSON += event.Delta.PartialJSON
+			return p.constructOpenAIChatCompletionChunk(delta, ""), nil
+		case string(constant.ValueOf[constant.CompactionDelta]()):
+			// The non-beta SDK's RawContentBlockDeltaUnion doesn't expose the compaction
+			// content through a typed field, so we extract it from the raw JSON.
+			content := gjson.Get(event.Delta.RawJSON(), "content").String()
+			delta := openai.ChatCompletionResponseChunkChoiceDelta{CompactionContent: &content}
 			return p.constructOpenAIChatCompletionChunk(delta, ""), nil
 		}
 
@@ -1125,6 +1154,13 @@ func messageToChatCompletion(anthropicResp *anthropic.Message, responseModel int
 						},
 					},
 				}
+			}
+		case string(constant.ValueOf[constant.Compaction]()):
+			// The non-beta SDK's ContentBlockUnion doesn't expose the compaction content
+			// through a typed field, so we extract it from the raw JSON.
+			content := gjson.Get(output.RawJSON(), "content").String()
+			if content != "" {
+				choice.Message.CompactionContent = &content
 			}
 		}
 	}

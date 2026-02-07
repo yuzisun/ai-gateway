@@ -70,7 +70,7 @@ func (o *openAIToAWSAnthropicTranslatorV1ChatCompletion) RequestBody(_ []byte, o
 		o.streamParser = newAnthropicStreamParser(o.requestModel)
 	}
 
-	params, err := buildAnthropicParams(openAIReq)
+	params, contextManagement, err := buildAnthropicParams(openAIReq)
 	if err != nil {
 		return
 	}
@@ -89,6 +89,19 @@ func (o *openAIToAWSAnthropicTranslatorV1ChatCompletion) RequestBody(_ []byte, o
 	body, err = sjson.SetBytes(body, anthropicVersionKey, anthropicVersion)
 	if err != nil {
 		return
+	}
+
+	// c. Inject "context_management" if present (beta Anthropic feature not in non-beta MessageNewParams).
+	if contextManagement != nil {
+		var cmJSON []byte
+		cmJSON, err = json.Marshal(contextManagement)
+		if err != nil {
+			return
+		}
+		body, err = sjson.SetRawBytes(body, "context_management", cmJSON)
+		if err != nil {
+			return
+		}
 	}
 	newBody = body
 

@@ -548,6 +548,7 @@ const (
 	ChatCompletionAssistantMessageParamContentTypeRefusal          ChatCompletionAssistantMessageParamContentType = "refusal"
 	ChatCompletionAssistantMessageParamContentTypeThinking         ChatCompletionAssistantMessageParamContentType = "thinking"
 	ChatCompletionAssistantMessageParamContentTypeRedactedThinking ChatCompletionAssistantMessageParamContentType = "redacted_thinking"
+	ChatCompletionAssistantMessageParamContentTypeCompaction       ChatCompletionAssistantMessageParamContentType = "compaction"
 )
 
 // ChatCompletionAssistantMessageParamContent Learn about
@@ -563,6 +564,8 @@ type ChatCompletionAssistantMessageParamContent struct {
 	// The signature for a thinking block.
 	Signature               *string               `json:"signature,omitempty"`
 	RedactedContent         *RedactedContentUnion `json:"redactedContent,omitempty"`
+	// The compaction content summary from context management.
+	CompactionContent *string `json:"compaction_content,omitempty"`
 	*AnthropicContentFields `json:",inline,omitempty"`
 }
 
@@ -1128,6 +1131,11 @@ type ChatCompletionRequest struct {
 
 	// Thinking: The thinking config for reasoning models
 	Thinking *ThinkingUnion `json:"thinking,omitzero"`
+
+	// ContextManagement is the context management configuration for Anthropic models.
+	// This is a vendor-specific extension passed through to Anthropic backends.
+	// https://docs.anthropic.com/en/docs/build-with-claude/context-management
+	ContextManagement *anthropic.BetaContextManagementConfigParam `json:"context_management,omitzero"`
 }
 
 type StreamOptions struct {
@@ -1395,6 +1403,11 @@ type ChatCompletionResponseChoiceMessage struct {
 	// like "reasoningContent" from AWS Bedrock.
 	ReasoningContent *ReasoningContentUnion `json:"reasoning_content,omitempty"`
 
+	// CompactionContent contains the compaction summary content from Anthropic's context management.
+	// When context_management is enabled and the model compacts the conversation,
+	// this field holds the summary that should be round-tripped in subsequent requests.
+	CompactionContent *string `json:"compaction_content,omitempty"`
+
 	// GCPVertexAI specific fields.
 
 	// SafetyRatings contains safety ratings copied from the GCP Vertex AI response as-is.
@@ -1538,6 +1551,7 @@ type ChatCompletionResponseChunkChoiceDelta struct {
 	ToolCalls        []ChatCompletionChunkChoiceDeltaToolCall `json:"tool_calls,omitempty"`
 	Annotations      *[]Annotation                            `json:"annotations,omitempty"`
 	ReasoningContent *StreamReasoningContent                  `json:"reasoning_content,omitempty"`
+	CompactionContent *string                                 `json:"compaction_content,omitempty"`
 }
 
 // Error is described in the OpenAI API documentation

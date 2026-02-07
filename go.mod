@@ -9,7 +9,7 @@ require (
 	github.com/a8m/envsubst v1.4.3
 	github.com/alecthomas/kong v1.13.0
 	github.com/andybalholm/brotli v1.2.0
-	github.com/anthropics/anthropic-sdk-go v1.19.0
+	github.com/anthropics/anthropic-sdk-go v1.22.0
 	github.com/aws/aws-sdk-go-v2 v1.41.1
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.4
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
